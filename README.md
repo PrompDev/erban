@@ -10,6 +10,10 @@ stay out of your way**.
 > Live at **[erban.xyz](https://erban.xyz)**. Windows only for the one-click corner window; there's a
 > `install.sh` for macOS/Linux that gives you the same agent via `openclaw dashboard`.
 
+## Watch it in action
+
+[![Watch the erban demo — one click to OpenClaw](https://img.youtube.com/vi/85Y3259aCEs/maxresdefault.jpg)](https://youtu.be/85Y3259aCEs)
+
 ---
 
 ## Install
