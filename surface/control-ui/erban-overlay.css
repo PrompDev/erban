@@ -1,0 +1,148 @@
+/* Erban Business surface overlay styles.
+   Served only by the Erban OpenClaw gateway (gateway.controlUi.root) — scoped to
+   the Erban surface, does not touch the shared OpenClaw package. */
+
+/* (3) Flush avatar: remove the border/ring/outline around the avatar emoji. */
+.chat-avatar,
+.chat-avatar.assistant,
+.chat-avatar.user,
+.chat-avatar--logo {
+  border: 0 none !important;
+  box-shadow: none !important;
+  outline: 0 none !important;
+}
+
+/* (1) First-run "What should you call me?" screen. */
+#erban-firstrun {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0c0e13;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+#erban-firstrun * { box-sizing: border-box; }
+#erban-firstrun .erban-fr-card {
+  width: min(360px, 86vw);
+  text-align: center;
+  color: #ecedf1;
+  padding: 28px 24px;
+}
+#erban-firstrun .erban-fr-logo { width: 52px; height: 52px; display: block; margin: 0 auto 14px; }
+#erban-firstrun .erban-fr-title { font-size: 20px; font-weight: 650; margin: 0 0 6px; }
+#erban-firstrun .erban-fr-sub { font-size: 13px; color: #9a9aa5; margin: 0 0 18px; line-height: 1.5; }
+#erban-firstrun .erban-fr-input {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 15px;
+  border-radius: 10px;
+  border: 1px solid #2b2e3a;
+  background: #15171f;
+  color: #fff;
+  outline: none;
+}
+#erban-firstrun .erban-fr-input:focus { border-color: #d8453a; }
+#erban-firstrun .erban-fr-btn {
+  margin-top: 12px;
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  background: #d8453a;
+  color: #fff;
+  cursor: pointer;
+}
+#erban-firstrun .erban-fr-btn:hover { background: #e2554a; }
+#erban-firstrun .erban-fr-btn:disabled { opacity: 0.6; cursor: default; }
+#erban-firstrun .erban-fr-status { min-height: 16px; margin: 10px 0 0; font-size: 12px; color: #9a9aa5; }
+
+/* (3) Reset / rename control */
+#erban-reset {
+  position: fixed;
+  left: 8px;
+  bottom: 6px;
+  z-index: 2147483640;
+  padding: 4px 9px;
+  font: 600 11px/1 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #cfd0d6;
+  background: rgba(20, 22, 29, 0.7);
+  border: 1px solid rgba(120, 124, 140, 0.35);
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+#erban-reset:hover { opacity: 1; background: rgba(216, 69, 58, 0.9); color: #fff; border-color: transparent; }
+
+/* (1b) First-run provider sign-in. Sits between the name input and Start. */
+#erban-firstrun .erban-fr-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 10px;
+  color: #7c7f8c;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+#erban-firstrun .erban-fr-or::before,
+#erban-firstrun .erban-fr-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #23262f;
+}
+#erban-firstrun .erban-fr-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#erban-firstrun .erban-fr-prov {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid #2b2e3a;
+  background: #15171f;
+  color: #ecedf1;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+}
+#erban-firstrun .erban-fr-prov:hover:not(:disabled) { background: #1b1e27; border-color: #3a3e4c; }
+#erban-firstrun .erban-fr-prov .erban-fr-prov-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: 0.85; flex: none;
+}
+/* provider accents */
+#erban-firstrun .erban-fr-prov[data-provider="claude"] { color: #d97757; }
+#erban-firstrun .erban-fr-prov[data-provider="chatgpt"] { color: #10a37f; }
+#erban-firstrun .erban-fr-prov[data-provider="gemini"] { color: #4d8bf0; }
+#erban-firstrun .erban-fr-prov .erban-fr-prov-label { color: #ecedf1; }
+/* working state */
+#erban-firstrun .erban-fr-prov.is-working { opacity: 0.7; cursor: default; }
+#erban-firstrun .erban-fr-prov.is-working .erban-fr-prov-dot { animation: erban-pulse 1s ease-in-out infinite; }
+@keyframes erban-pulse { 0%,100% { opacity: 0.25; } 50% { opacity: 1; } }
+/* signed-in state */
+#erban-firstrun .erban-fr-prov.is-done { border-color: #2e7d52; background: rgba(46, 125, 82, 0.16); }
+#erban-firstrun .erban-fr-prov.is-done .erban-fr-prov-label { color: #cfe9da; }
+/* unsupported / coming-soon: dimmed, not clickable */
+#erban-firstrun .erban-fr-prov:disabled,
+#erban-firstrun .erban-fr-prov.is-soon { opacity: 0.4; cursor: not-allowed; }
+#erban-firstrun .erban-fr-prov .erban-fr-prov-tag {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #7c7f8c;
+}
+/* the Start button is hidden until a provider is signed in */
+#erban-firstrun .erban-fr-btn[hidden] { display: none; }

@@ -1,0 +1,8 @@
+.env
+*.env
+mcp/erban-crm/node_modules/
+*.log
+
+# build cache / runtime
+node_modules/
+.wrangler/
