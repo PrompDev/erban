@@ -1,4 +1,4 @@
-# Deploy the OpenClaw for Business (Erban) website to Cloudflare Pages.
+# Deploy the erban website (one-click OpenClaw installer) to Cloudflare Pages.
 #   Project:  erban   ->   https://erban.xyz   (apex CNAME -> erban-3ug.pages.dev, proxied)
 #   Account:  Drdeandrehyde@gmail.com  (a49cc77a6fe0d7347e84ea914e617aac)
 #
@@ -30,9 +30,12 @@ if ($missing) { throw "Missing build artifact(s) in site/artifacts/: $($missing 
 
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory -Force $out | Out-Null
-Copy-Item (Join-Path $site 'index.html')   $out
-Copy-Item (Join-Path $site 'favicon.svg')  $out
-Copy-Item (Join-Path $site 'openclaw.png') $out
+Copy-Item (Join-Path $site 'index.html')    $out
+Copy-Item (Join-Path $site 'favicon.svg')   $out
+Copy-Item (Join-Path $site 'openclaw.png')  $out
+Copy-Item (Join-Path $site 'installer.png') $out
+Copy-Item (Join-Path $site 'taskbar.png')   $out
+Copy-Item (Join-Path $site 'chat.png')      $out
 Copy-Item (Join-Path $repo 'installer/install.ps1') $out
 Copy-Item (Join-Path $repo 'installer/install.sh')  $out
 Copy-Item (Join-Path $art  'erban-assets.zip') $out

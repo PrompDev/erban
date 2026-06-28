@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>OpenClaw for Business — one click, then it runs the back office</title>
-<meta name="description" content="OpenClaw for Business installs itself in one click, parks a little chat box in the corner of your screen, and quietly reads your CRM and drafts your paperwork. Windows. Built on OpenClaw." />
+<title>erban — OpenClaw on your machine, one click</title>
+<meta name="description" content="erban installs OpenClaw on your Windows PC in one click. No terminal, no config — click once, give it a name, and it opens in a tidy chat window pinned to your taskbar. Built on OpenClaw." />
 <link rel="icon" href="/favicon.svg" />
 <style>
   :root{
@@ -37,18 +37,17 @@
 
   /* ---- nav ---- */
   nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0}
-  .brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:.01em}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:.01em;font-size:18px}
   .brand img{width:26px;height:26px;filter:drop-shadow(0 0 10px rgba(216,69,58,.5))}
-  .brand small{color:var(--muted);font-weight:500}
   nav .links{display:flex;gap:22px;font-size:14px;color:var(--muted)}
   nav .links a:hover{color:var(--ink)}
 
   /* ---- hero ---- */
-  .hero{display:grid;grid-template-columns:1.05fr .95fr;gap:54px;align-items:center;padding:64px 0 40px}
+  .hero{display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center;padding:56px 0 64px}
   .eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.04em;color:var(--red2);margin-bottom:18px}
-  h1{font-size:clamp(36px,5.2vw,60px);line-height:1.04;margin:0 0 20px;font-weight:700;letter-spacing:-.02em}
+  h1{font-size:clamp(38px,5.4vw,62px);line-height:1.05;margin:0 0 20px;font-weight:700;letter-spacing:-.02em}
   h1 .dim{color:var(--muted)}
-  .lede{font-size:clamp(16px,1.6vw,18.5px);color:#c8ccd6;max-width:33ch;margin:0 0 30px}
+  .lede{font-size:clamp(16px,1.6vw,18.5px);color:#c8ccd6;max-width:38ch;margin:0 0 30px}
   .lede b{color:var(--ink);font-weight:600}
 
   .cta{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
@@ -60,24 +59,23 @@
 
   .or{font-size:13px;color:var(--muted)}
   .cmd{display:flex;align-items:center;gap:10px;margin-top:18px;background:#0e1016;border:1px solid var(--line);
-       border-radius:12px;padding:11px 12px 11px 16px;max-width:430px}
+       border-radius:12px;padding:11px 12px 11px 16px;max-width:460px}
   .cmd code{font-family:var(--mono);font-size:13px;color:#dfe3ee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .cmd button{flex:none;font-family:var(--mono);font-size:12px;color:var(--muted);background:#171a22;border:1px solid var(--line);
               border-radius:8px;padding:6px 11px;cursor:pointer;transition:.12s}
   .cmd button:hover{color:var(--ink);border-color:var(--red)}
   .cmd button.done{background:var(--red);color:#fff;border-color:var(--red)}
-  .note{margin-top:14px;font-size:12px;color:var(--muted2);max-width:42ch}
+  .note{margin-top:14px;font-size:12px;color:var(--muted2);max-width:46ch}
   .note b{color:var(--muted)}
 
+  /* hero screenshot — static, no float animation (the transform created flickering edge seams) */
   .shot{position:relative}
-  .shot img{width:100%;border-radius:16px;border:1px solid var(--line);
-            box-shadow:0 40px 90px -30px rgba(0,0,0,.8), 0 0 70px -30px rgba(216,69,58,.5);
-            animation:float 7s ease-in-out infinite}
-  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+  .shot img{display:block;width:100%;border-radius:16px;border:1px solid var(--line);
+            box-shadow:0 40px 90px -30px rgba(0,0,0,.8), 0 0 70px -30px rgba(216,69,58,.45)}
   .shot::after{content:"";position:absolute;inset:-12%;z-index:-1;border-radius:50%;
-               background:radial-gradient(circle,rgba(216,69,58,.22),transparent 60%);filter:blur(30px)}
+               background:radial-gradient(circle,rgba(216,69,58,.20),transparent 60%);filter:blur(34px)}
 
-  .micro{display:flex;gap:18px;flex-wrap:wrap;margin-top:26px;font-size:12.5px;color:var(--muted)}
+  .micro{display:flex;gap:18px;flex-wrap:wrap;margin-top:28px;font-size:12.5px;color:var(--muted)}
   .micro span{display:flex;align-items:center;gap:7px}
   .micro b{color:var(--red2);font-weight:700}
 
@@ -85,13 +83,34 @@
   section{padding:74px 0;border-top:1px solid var(--line2)}
   .sec-eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.05em;color:var(--red2);margin-bottom:14px}
   h2{font-size:clamp(26px,3.3vw,38px);line-height:1.1;margin:0 0 14px;font-weight:700;letter-spacing:-.015em}
-  .sub{color:var(--muted);max-width:54ch;margin:0 0 44px;font-size:16px}
+  .sub{color:var(--muted);max-width:56ch;margin:0 0 44px;font-size:16px}
 
   .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
   .step{border:1px solid var(--line);border-radius:15px;padding:22px;background:linear-gradient(180deg,rgba(255,255,255,.018),transparent)}
   .step .n{font-family:var(--mono);font-size:12px;color:var(--red2);margin-bottom:12px}
   .step h3{margin:0 0 7px;font-size:16.5px;font-weight:650}
   .step p{margin:0;font-size:13.5px;color:var(--muted);line-height:1.55}
+
+  /* centered installer screenshot under the steps */
+  .howshot{margin:46px auto 0;max-width:430px;position:relative}
+  .howshot img{display:block;width:100%;border-radius:14px;border:1px solid var(--line);
+               box-shadow:0 30px 70px -30px rgba(0,0,0,.85)}
+  .howshot figcaption{text-align:center;color:var(--muted2);font-size:12.5px;margin-top:14px}
+
+  /* ---- alternating feature rows (taskbar + corner chat) ---- */
+  .feature{display:grid;grid-template-columns:1fr 1fr;gap:52px;align-items:center}
+  .feature + .feature{margin-top:60px}
+  .feature .fimg{position:relative}
+  .feature .fimg img{display:block;width:100%;border-radius:14px;border:1px solid var(--line);
+                     box-shadow:0 30px 70px -30px rgba(0,0,0,.85)}
+  .feature.taskbar .fimg{display:flex;justify-content:center}
+  .feature.taskbar .fimg img{max-width:330px;width:100%}
+  .feature .fimg::after{content:"";position:absolute;inset:-10%;z-index:-1;border-radius:40%;
+                        background:radial-gradient(circle,rgba(216,69,58,.16),transparent 62%);filter:blur(32px)}
+  .feature h3{margin:0 0 12px;font-size:clamp(22px,2.5vw,28px);font-weight:700;letter-spacing:-.01em}
+  .feature p{margin:0;color:var(--muted);font-size:15.5px;line-height:1.6;max-width:42ch}
+  .feature p b{color:var(--ink);font-weight:600}
+  .feature.rev .ftext{order:2}
 
   .why{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-top:8px}
   .card{border:1px solid var(--line);border-radius:15px;padding:24px;display:flex;gap:16px;align-items:flex-start}
@@ -100,7 +119,6 @@
   .card h3{margin:0 0 5px;font-size:16px;font-weight:650}
   .card h3 b{color:var(--red2)}
   .card p{margin:0;font-size:14px;color:var(--muted);line-height:1.55}
-  .card code{font-family:var(--mono);font-size:12.5px;color:#dfe3ee}
 
   .built{display:flex;align-items:center;gap:18px;border:1px solid var(--line);border-radius:16px;padding:26px;
          background:linear-gradient(180deg,rgba(216,69,58,.05),transparent)}
@@ -109,15 +127,19 @@
   .built b{color:var(--ink)}
 
   footer{border-top:1px solid var(--line2);padding:46px 0 70px;text-align:center}
-  footer .fcmd{font-family:var(--mono);font-size:13px;color:var(--muted);margin:14px 0}
+  footer .fline{color:var(--muted);font-size:14px;max-width:60ch;margin:0 auto}
+  footer .fcmd{font-family:var(--mono);font-size:13px;color:var(--muted);margin:18px 0 0}
   footer .fcmd .p{color:var(--red2)}
-  footer .tag{color:var(--muted2);font-size:13px;margin-top:10px}
-  footer .mk{font-size:12px;color:var(--muted2);margin-top:18px}
+  footer .tag{color:var(--muted2);font-size:13px;margin-top:14px}
+  footer .mk{font-size:12px;color:var(--muted2);margin-top:16px}
 
   @media(max-width:860px){
-    .hero{grid-template-columns:1fr;gap:36px;padding:36px 0}
+    .hero{grid-template-columns:1fr;gap:34px;padding:32px 0 48px}
     .shot{order:-1;max-width:420px}
     .steps{grid-template-columns:1fr 1fr}
+    .feature{grid-template-columns:1fr;gap:24px}
+    .feature.rev .ftext{order:0}
+    .feature p{max-width:none}
     .why{grid-template-columns:1fr}
     nav .links{display:none}
   }
@@ -130,16 +152,21 @@
 <div class="wrap">
 
   <nav>
-    <div class="brand"><img src="/favicon.svg" alt="" /> OpenClaw <small>for Business</small></div>
-    <div class="links"><a href="#how">How it works</a><a href="#why">Why it's better</a><a href="https://openclaw.ai" target="_blank" rel="noopener">Built on OpenClaw &#8599;</a></div>
+    <div class="brand"><img src="/favicon.svg" alt="" /> erban</div>
+    <div class="links">
+      <a href="#how">How it works</a>
+      <a href="#why">Why</a>
+      <a href="https://openclaw.ai" target="_blank" rel="noopener">Built on OpenClaw &#8599;</a>
+      <a href="https://github.com/PrompDev/erban" target="_blank" rel="noopener">GitHub &#8599;</a>
+    </div>
   </nav>
 
   <!-- HERO -->
   <header class="hero">
     <div>
       <div class="eyebrow">one click &middot; windows &middot; built on OpenClaw</div>
-      <h1>Turn it on. Name it.<br /><span class="dim">Let it run the back office.</span></h1>
-      <p class="lede">OpenClaw for Business installs itself in <b>one click</b>, parks a little chat box in the corner of your screen, and quietly reads your CRM and drafts your paperwork &mdash; <b>so you can check it and send it.</b> No terminal, no config, no IT bloke.</p>
+      <h1>OpenClaw on your machine.<br /><span class="dim">One click.</span></h1>
+      <p class="lede">No terminal, no config, no IT bloke. Click once, give it a name, and OpenClaw's up and running, <b>ready to chat.</b></p>
 
       <div class="cta">
         <a class="dl" href="/OpenClaw-for-Business-Setup.exe" download>
@@ -153,43 +180,70 @@
         <code id="cmd">powershell -NoProfile -Command "irm https://erban.xyz/install.ps1 | iex"</code>
         <button id="copy">copy</button>
       </div>
-      <p class="note" style="margin-top:8px;opacity:.85">Paste it into <b>Command Prompt</b>, <b>PowerShell</b>, or the <b>Run</b> box (Win+R) &mdash; all three work.</p>
+      <p class="note" style="margin-top:8px;opacity:.85">Drop it into <b>Command Prompt</b>, <b>PowerShell</b>, or the <b>Run</b> box (Win+R) &mdash; all three work.</p>
 
-      <p class="note"><b>Heads up:</b> the .exe is unsigned for now, so Windows SmartScreen shows an "unknown publisher" warning the first time &mdash; click <b>More info &rarr; Run anyway</b>. Code-signing is on the way.</p>
+      <p class="note"><b>Heads up:</b> the .exe is unsigned for now, so Windows SmartScreen flags an "unknown publisher" the first time &mdash; click <b>More info &rarr; Run anyway</b>. Signing's on the way.</p>
 
       <div class="micro">
         <span><b>&#10022;</b> sets itself up</span>
         <span><b>&#10022;</b> one folder you own</span>
-        <span><b>&#10022;</b> read &amp; draft only</span>
+        <span><b>&#10022;</b> built on OpenClaw</span>
       </div>
     </div>
 
-    <div class="shot"><img src="/openclaw.png" alt="OpenClaw for Business asking what to call your assistant" /></div>
+    <div class="shot"><img src="/openclaw.png" alt="OpenClaw asking what to name your assistant" /></div>
   </header>
 
   <!-- HOW -->
   <section id="how">
     <div class="sec-eyebrow">when you run it</div>
     <h2>It sets itself up. You just watch.</h2>
-    <p class="sub">A friendly little agent appears, takes a look at your machine, and does the lot &mdash; installs everything, works around whatever's on your PC, and opens your assistant. No wizards, no questions you can't answer.</p>
+    <p class="sub">A little agent appears, sizes up your machine, and does the lot. No wizards, no questions you can't answer.</p>
     <div class="steps">
-      <div class="step"><div class="n">01</div><h3>One click</h3><p>Run the download (or paste the one line). That's the last "techy" thing you do.</p></div>
-      <div class="step"><div class="n">02</div><h3>The claw figures it out</h3><p>It checks your machine, installs OpenClaw and everything it needs, and quietly solves the snags &mdash; missing bits, busy ports, no Chrome &mdash; narrating as it goes.</p></div>
-      <div class="step"><div class="n">03</div><h3>Name your assistant</h3><p>A small window asks "what should you call me?". Pick a name. That's the whole setup.</p></div>
-      <div class="step"><div class="n">04</div><h3>It lives in the corner</h3><p>A tidy chat box sits bottom-right, reads your books and drafts your work. Back tomorrow, same spot.</p></div>
+      <div class="step"><div class="n">01</div><h3>One click</h3><p>Run the download, or paste the one line. That's the last fiddly thing you do.</p></div>
+      <div class="step"><div class="n">02</div><h3>It sorts the rest</h3><p>It checks your machine, installs OpenClaw and everything it needs, and works around whatever's already on there, showing you where it's up to as it goes.</p></div>
+      <div class="step"><div class="n">03</div><h3>Name your assistant</h3><p>A small window asks what to call it. Pick a name. That's the setup done.</p></div>
+      <div class="step"><div class="n">04</div><h3>It opens up</h3><p>OpenClaw opens in a tidy window, ready to go. Come back any time, it's right where you left it.</p></div>
+    </div>
+    <figure class="howshot">
+      <img src="/installer.png" alt="The erban installer setting up OpenClaw — a four-step checklist" />
+      <figcaption>The installer does the lot &mdash; checks your machine, installs the essentials, sets up your assistant, opens it.</figcaption>
+    </figure>
+  </section>
+
+  <!-- TASKBAR + CORNER CHAT -->
+  <section id="lives">
+    <div class="sec-eyebrow">where it lives</div>
+    <h2>One click away, always.</h2>
+    <p class="sub">Once it's in, your assistant isn't buried in a menu. It sits on your taskbar and opens in the corner whenever you want it.</p>
+
+    <div class="feature taskbar">
+      <div class="fimg"><img src="/taskbar.png" alt="The OpenClaw icon pinned to the Windows taskbar" /></div>
+      <div class="ftext">
+        <h3>Pinned to your taskbar</h3>
+        <p>OpenClaw installs with its <b>own icon on your taskbar</b>. Close the window and OpenClaw closes with it &mdash; but the icon stays pinned, so your agent is <b>one click away any time</b> you want it.</p>
+      </div>
+    </div>
+
+    <div class="feature rev">
+      <div class="fimg"><img src="/chat.png" alt="The OpenClaw chat window open in the bottom-right of the screen" /></div>
+      <div class="ftext">
+        <h3>Your agent, in the corner</h3>
+        <p>Click the icon and it opens in a clean chat window in the <b>bottom-right of your screen</b> &mdash; a tidy app window, no tabs, no address bar. Talk to it, close it, open it again. It's always right where you left it.</p>
+      </div>
     </div>
   </section>
 
   <!-- WHY -->
   <section id="why">
-    <div class="sec-eyebrow">why it's better</div>
-    <h2>Built to disappear.</h2>
-    <p class="sub">Most "AI tools" hand you a terminal and a config file. This one does the awkward parts itself.</p>
+    <div class="sec-eyebrow">why</div>
+    <h2>Built to get out of your way.</h2>
+    <p class="sub">Most tools hand you a terminal and a config file. This one does the awkward parts itself.</p>
     <div class="why">
-      <div class="card"><div class="dot">&#8984;</div><div><h3>No terminal, <b>no config</b></h3><p>The installer is the setup. It adapts to your exact machine instead of asking you to. If something's off, it fixes it and tells you what it did.</p></div></div>
-      <div class="card"><div class="dot">&#9634;</div><div><h3>Everything in <b>one folder</b></h3><p>It all lands in <code>C:\OpenClawBusiness</code> &mdash; app, settings, logs, the lot. Nothing buried in deep system folders. Yours to see, back up, or remove.</p></div></div>
-      <div class="card"><div class="dot">&#9998;</div><div><h3>Read &amp; <b>draft only</b></h3><p>This build reads your CRM and writes drafts for you to check. It cannot send, post, delete or pay &mdash; by design, not by promise.</p></div></div>
-      <div class="card"><div class="dot">&#9680;</div><div><h3>Open <b>underneath</b></h3><p>Built on OpenClaw, the open-source agent platform. Use Claude or your own model. The heavy lifting is theirs; we just make it boot and behave.</p></div></div>
+      <div class="card"><div class="dot">&#8984;</div><div><h3>No terminal, <b>no config</b></h3><p>The installer is the setup. It adapts to your machine instead of asking you to. If something's off, it sorts it and tells you what it did.</p></div></div>
+      <div class="card"><div class="dot">&#9634;</div><div><h3>Everything in <b>one folder</b></h3><p>App, settings and logs all land in one place you can see, back up, or remove. Nothing buried deep in the system.</p></div></div>
+      <div class="card"><div class="dot">&#9680;</div><div><h3>Built on <b>OpenClaw</b></h3><p>It's a one-click wrapper around OpenClaw, the open-source AI assistant. The clever bits are theirs. We just make it install itself and behave.</p></div></div>
+      <div class="card"><div class="dot">&#9737;</div><div><h3>Your machine, <b>your model</b></h3><p>Runs on your own PC. Use Claude, or bring your own model.</p></div></div>
     </div>
   </section>
 
@@ -197,7 +251,7 @@
   <section>
     <div class="built">
       <img src="/favicon.svg" alt="" />
-      <p><b>Standing on OpenClaw's shoulders.</b> OpenClaw for Business is a one-click wrapper around <a href="https://openclaw.ai" target="_blank" rel="noopener" style="color:var(--red2)">OpenClaw</a>, the open-source AI assistant. We make it install itself, behave on a real machine, and stay out of your way.</p>
+      <p><b>Standing on OpenClaw's shoulders.</b> erban is a one-click wrapper around <a href="https://openclaw.ai" target="_blank" rel="noopener" style="color:var(--red2)">OpenClaw</a>, the open-source AI assistant. The clever bits are theirs &mdash; we just make it install itself, behave on a real machine, and stay out of your way.</p>
     </div>
   </section>
 
@@ -205,10 +259,11 @@
 
 <footer>
   <div class="wrap">
-    <div class="brand" style="justify-content:center"><img src="/favicon.svg" alt="" /> OpenClaw <small>for Business</small></div>
+    <div class="brand" style="justify-content:center"><img src="/favicon.svg" alt="" /> erban</div>
+    <p class="fline">Built on OpenClaw, the open-source AI assistant. We make it install itself, behave on a real machine, and stay out of the way.</p>
     <div class="fcmd"><span class="p">&gt;</span> irm https://erban.xyz/install.ps1 | iex</div>
     <div class="tag">The lobster way, for people who'd rather not.</div>
-    <div class="mk">made by erban &middot; erban.xyz</div>
+    <div class="mk">made by erban &middot; <a href="https://github.com/PrompDev/erban" target="_blank" rel="noopener">github.com/PrompDev/erban</a></div>
   </div>
 </footer>
 </main>

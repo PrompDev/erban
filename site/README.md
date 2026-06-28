@@ -1,6 +1,6 @@
-# Website — erban.xyz (OpenClaw for Business)
+# Website — erban.xyz
 
-The public landing page + installer downloads.
+The public landing page + installer downloads for **erban** (a one-click OpenClaw installer).
 
 ## Hosting
 
@@ -13,9 +13,10 @@ The public landing page + installer downloads.
 | URL | Source |
 |-----|--------|
 | `/` | `site/index.html` |
-| `/favicon.svg`, `/openclaw.png` | `site/` |
+| `/favicon.svg` | `site/` |
+| `/openclaw.png`, `/installer.png`, `/taskbar.png`, `/chat.png` | `site/` (the landing-page screenshots) |
 | `/install.ps1`, `/install.sh` | `../installer/` |
-| `/erban-assets.zip` | build artifact — the app bundle `install.ps1` downloads (zip of `../surface` + `../mcp` + `../agent`) |
+| `/erban-assets.zip` | build artifact — the app bundle `install.ps1` downloads (zip of `../surface` + `../agent`) |
 | `/OpenClaw-for-Business-Setup.exe` | build artifact — `ps2exe` wrapper of `../installer/install.ps1` |
 
 The two build artifacts live in `site/artifacts/` (gitignored — derivable, kept out of git to avoid
@@ -31,12 +32,14 @@ iwr https://erban.xyz/OpenClaw-for-Business-Setup.exe -OutFile site/artifacts/Op
 ```powershell
 powershell -File site/deploy.ps1     # assembles the flat site + artifacts, then `wrangler pages deploy`
 ```
+
 Requires `wrangler` auth (`npx wrangler whoami`). Pages keeps every deployment immutable with instant
 rollback in the dashboard if a deploy goes wrong.
 
-## ⚠️ Before rebuilding `erban-assets.zip`
+## Rebuilding `erban-assets.zip`
 
-`erban-assets.zip` is currently the **stable, pre-gate** app bundle. Do **not** rebuild it from the
-current `../surface` and redeploy until the installer is updated to drive the **claude-cli capability
-gate** + **one-click provider sign-in** — otherwise the corner box ships a sign-in flow the installed
-machine can't complete. See the root `../README.md` ("Status / known gaps").
+`erban-assets.zip` is just a zip of `../surface` + `../agent` (the app bundle `install.ps1` downloads
+and extracts to `C:\OpenClawBusiness\app`). Rebuild it whenever you change those folders or
+`installer/install.ps1`, drop it in `site/artifacts/`, then redeploy. `OpenClaw-for-Business-Setup.exe`
+is a `ps2exe` wrapper of `installer/install.ps1`; rebuild it when the installer changes so the `.exe`
+download matches the one-liner.

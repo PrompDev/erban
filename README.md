@@ -1,59 +1,115 @@
-# Erban — OpenClaw for Business
+# erban — OpenClaw on your machine, one click
 
-A one-click installer that wraps [OpenClaw](https://openclaw.ai) (MIT) into a locked-down,
-**read-and-draft** back-office assistant for non-technical trades/small businesses. It installs
-OpenClaw, parks a chromeless chat box in the corner of the screen, and on first run asks the owner
-to name the assistant. The agent can **read the CRM and draft work** for the owner to check and
-send — it does **not** send, post, delete or pay.
+**erban** is a one-click installer that puts [OpenClaw](https://openclaw.ai) (the open-source AI
+assistant, MIT) on a Windows PC — no terminal, no config, no IT person. You click once, give your
+assistant a name, and it opens in a tidy chat window pinned to your taskbar.
 
-> Brand note: the product ships publicly as **"OpenClaw for Business"**; "Erban" is the internal/code name.
+The clever bits are OpenClaw's. erban just makes it **install itself, behave on a real machine, and
+stay out of your way**.
+
+> Live at **[erban.xyz](https://erban.xyz)**. Windows only for the one-click corner window; there's a
+> `install.sh` for macOS/Linux that gives you the same agent via `openclaw dashboard`.
+
+---
+
+## Install
+
+**One line** — paste into Command Prompt, PowerShell, or the Run box (Win+R):
+
+```powershell
+powershell -NoProfile -Command "irm https://erban.xyz/install.ps1 | iex"
+```
+
+**Or** download **[OpenClaw-for-Business-Setup.exe](https://erban.xyz/OpenClaw-for-Business-Setup.exe)**
+and run it.
+
+> **Heads up:** the `.exe` is unsigned for now, so Windows SmartScreen flags an "unknown publisher"
+> the first time — click **More info → Run anyway**. Code-signing is on the way.
+
+---
+
+## What you get
+
+### 1. Name your OpenClaw agent
+
+On first run a small window asks what to call it. Pick a name — that's the setup done.
+
+![Name your OpenClaw agent](site/openclaw.png)
+
+### 2. It sets itself up
+
+A friendly installer checks your machine, installs OpenClaw and everything it needs (Node, Chrome for
+a clean app window, the model engine), works around whatever's already on the PC, and shows you where
+it's up to as it goes.
+
+![The erban installer setting up OpenClaw](site/installer.png)
+
+### 3. Pinned to your taskbar
+
+OpenClaw installs with its **own icon on your taskbar**. Close the window and OpenClaw closes with it —
+but the icon stays pinned, so your agent is **one click away any time** you want it.
+
+![The OpenClaw icon pinned to the Windows taskbar](site/taskbar.png)
+
+### 4. Your agent, in the corner
+
+Click the icon and it opens in a clean chat window in the **bottom-right of your screen** — a tidy app
+window (a headless Chrome `--app` window), no tabs, no address bar. Talk to it, close it, open it
+again. It's always right where you left it.
+
+![The OpenClaw chat window open in the bottom-right of the screen](site/chat.png)
+
+---
+
+## Why it's built this way
+
+- **No terminal, no config.** The installer *is* the setup. It adapts to your machine instead of
+  asking you to. If something's off, it sorts it and logs what it did.
+- **Everything in one folder.** App, settings and logs all land under `C:\OpenClawBusiness\` — one
+  place you can see, back up, or remove. Nothing buried deep in the system.
+- **Your machine, your model.** Runs on your own PC. Use Claude, or bring your own model.
+- **Built on OpenClaw.** It's a thin one-click wrapper. The agent runtime, gateway and Control UI are
+  all OpenClaw's — we don't rebuild any of it.
+
+---
+
+## How the install works
+
+`install.ps1` does everything under **`C:\OpenClawBusiness\`** (`app`, `profile`, `browser`, `logs`,
+`ui`):
+
+1. Opens a friendly progress window instantly (it's embedded, no download needed).
+2. Installs **Node**, then **OpenClaw** (`npm i -g openclaw`), then **Chrome** (so the corner box
+   shows OpenClaw's own taskbar icon), then the **Claude engine**.
+3. Downloads the app bundle (`erban.xyz/erban-assets.zip` — a zip of this repo's `surface/` +
+   `agent/`).
+4. Writes the OpenClaw config + gateway launcher, registers the **gateway / surface / watchdog**
+   scheduled tasks and a firewall rule.
+5. Names your assistant and opens the corner chat box.
+
+The installed agent is plain OpenClaw — named, set up, ready to chat.
 
 ## Repo layout
 
 | Path | What it is |
 |------|------------|
-| `CLAUDE.md` | Authoritative build spec (v2, post red-team). Start here. |
-| `architecture.md` | Original design overview (superseded where it conflicts with `CLAUDE.md`). |
-| `surface/` | The corner box: `launch-surface.ps1` (chromeless `--app` launcher), the rebranded OpenClaw Control UI under `control-ui/` with the injected `erban-overlay.{css,js}`, the first-run + provider sign-in helper under `identity-service/`, and `erban-uninstall.ps1`. |
-| `mcp/erban-crm/` | The read-only CRM MCP server (the one real integration) + sample `crm.json`. |
+| `installer/` | The published installers — `install.ps1` (Windows) and `install.sh` (macOS/Linux). The `.exe` and `erban-assets.zip` on the site are **build artifacts** of this source. |
+| `surface/` | The corner box: `launch-surface.ps1` (the chromeless `--app` launcher), the rebranded OpenClaw Control UI under `control-ui/` with the injected `erban-overlay.{css,js}`, the first-run naming + provider sign-in helper under `identity-service/`, and `erban-uninstall.ps1`. |
 | `agent/workspace/` | The agent's workspace files (`SOUL.md`, `AGENTS.md`, `IDENTITY.md`, …) injected into its system prompt. |
-| `installer/` | The published installers — `install.ps1` (Windows) and `install.sh` (nix). The `.exe` and `erban-assets.zip` on the site are **build artifacts** of this source (see below). |
-| `site/` | The marketing landing page served at erban.xyz. |
+| `site/` | The landing page served at erban.xyz, plus the screenshots above. |
+| `CLAUDE.md` | Build spec — what the installer does and the conventions it follows. |
+| `architecture.md` | Short design overview. |
 
-## How install works (published flow)
+### Build artifacts (not committed)
 
-```
-iwr -useb https://erban.xyz/install.ps1 | iex     # Windows one-liner
-# ...or download OpenClaw-for-Business-Setup.exe (a wrapper around install.ps1)
-```
+Produced from this source, hosted on erban.xyz, and kept out of git (derivable, avoids binary drift):
 
-`install.ps1` installs everything under **`C:\OpenClawBusiness\`** (`app`, `profile`, `browser`,
-`logs`, `ui`): it installs Node + OpenClaw, downloads the app bundle (`erban.xyz/erban-assets.zip`,
-which is a zip of this repo's `surface/` + `mcp/` + `agent/`), writes the OpenClaw config + gateway
-launcher, registers the **OpenClaw Business Gateway / Surface / Watchdog** scheduled tasks and a
-firewall rule, and opens the corner box.
+- `erban-assets.zip` — a zip of `surface/` + `agent/`, downloaded by `install.ps1`.
+- `OpenClaw-for-Business-Setup.exe` — a `ps2exe` wrapper of `installer/install.ps1`.
 
-Build artifacts (not committed; produced from this source): `erban-assets.zip` = zip of the app
-folders; `OpenClaw-for-Business-Setup.exe` = a `ps2exe`-style wrapper of `installer/install.ps1`.
-Both are hosted on erban.xyz. *(A build/deploy script for these is not yet in the repo — TODO.)*
-
-## Status / known gaps (important)
-
-The **published** `installer/install.ps1` is an early build and has two known issues being addressed
-in `surface/`:
-
-1. **Model auth is not provisioned.** The installer never logs the model backend in, so a fresh
-   machine errors `No API key found for provider anthropic`. The fix is one-click provider sign-in
-   (`surface/identity-service/provider-auth.mjs` + the overlay's "Sign in with …" buttons) — wired
-   for Claude, with ChatGPT/Gemini gated behind their own capability-gate proofs.
-2. **The capability gate is not real in the published build.** It runs the OpenClaw *embedded*
-   runtime with a prompt/persona-only "read-and-draft" boundary. The hardened gate uses the
-   **claude-cli** backend with native tools stripped (`--tools ""`) so only the 5 `erban-crm` MCP
-   tools are reachable — a true capability-level lockout, not persona.
-
-See `CLAUDE.md` for the full design and the safety model.
+See `site/README.md` for the Cloudflare Pages hosting + deploy details.
 
 ## Built on OpenClaw
 
-Erban is a thin trades-specific policy + workflow layer over OpenClaw. The heavy lifting (agent
-runtime, gateway, Control UI) is OpenClaw's. We don't rebuild any of it.
+[OpenClaw](https://openclaw.ai) is the open-source AI assistant doing the real work. erban is the thin
+layer that makes it install itself in one click, behave on a real machine, and stay out of the way.

@@ -2,9 +2,9 @@
 #   irm https://erban.xyz/install.ps1 | iex        (one-liner)
 #   ...or run OpenClaw-for-Business-Setup.exe       (1-click)
 #
-# Installs OpenClaw (which installs Node), then sets up the read-and-draft business
-# assistant ENTIRELY under one folder (default C:\OpenClawBusiness). A friendly
-# animated window opens INSTANTLY and shows a clean 4-step checklist.
+# Installs OpenClaw (which installs Node) and sets it up ENTIRELY under one folder
+# (default C:\OpenClawBusiness). A friendly animated window opens INSTANTLY and
+# shows a clean 4-step checklist.
 #
 # Switches:  -NoUi (console only)   -Demo (UI with simulated steps)   -NoElevate (testing)
 
@@ -308,7 +308,7 @@ $engine = {
       }catch{ Log "chrome install skipped: $($_.Exception.Message)" }
     } else { Log "chrome present: $chromeExe" }
 
-    # 1d - install the Claude engine (the gated backend runs the agent through the claude CLI).
+    # 1d - install the Claude engine (OpenClaw runs the agent through the claude CLI backend).
     if(-not (Get-Command claude -ErrorAction SilentlyContinue) -and -not (Test-Path "$env:USERPROFILE\.local\bin\claude.exe")){
       Step 1 'Installing the Claude engine...' 58
       $ec=RunTimed $npm @('install','-g','@anthropic-ai/claude-code') 420 (Join-Path $ctx.logs 'claude.out') (Join-Path $ctx.logs 'claude.err')
@@ -316,21 +316,6 @@ $engine = {
       $env:Path=[Environment]::GetEnvironmentVariable('Path','Machine')+';'+[Environment]::GetEnvironmentVariable('Path','User')
       Log 'claude CLI installed'
     } else { Log 'claude CLI already present' }
-
-    # 1e - gate the claude-cli backend in place: strip Claude's native tools (--tools "") and allow
-    #      only the erban-crm MCP tools. Safe on a business machine - it only runs the gated agent.
-    $ocDist = if($ocIndex){ Split-Path $ocIndex } else { "$env:APPDATA\npm\node_modules\openclaw\dist" }
-    try{
-      $cli = Get-ChildItem $ocDist -Filter 'cli-backend-*.js' -ErrorAction Stop | Where-Object { $t=Get-Content -Raw $_.FullName; ($t -match 'mcp__openclaw__\*') -and ($t -match 'ScheduleWakeup,CronCreate') } | Select-Object -First 1
-      if($cli){
-        $txt = Get-Content -Raw $cli.FullName
-        if($txt -notmatch '"--tools",\s*""'){
-          $txt = [regex]::Replace($txt, '"--allowedTools",\s*"mcp__openclaw__\*",', '"--tools", "", "--allowedTools", "mcp__openclaw__*", "mcp__erban-crm__*",')
-          [System.IO.File]::WriteAllText($cli.FullName, $txt, (New-Object System.Text.UTF8Encoding($false)))
-          Log "gated claude-cli backend: $($cli.Name)"
-        } else { Log 'claude-cli backend already gated' }
-      } else { Log 'WARNING: cli-backend file not found in '+$ocDist+'; gate NOT applied' }
-    }catch{ Log "gate patch skipped: $($_.Exception.Message)" }
 
     # 2 - set everything up
     Step 2 'Setting up your assistant...' 60
@@ -341,20 +326,12 @@ $engine = {
     Log 'bundle extracted'
     $controlUi=(Join-Path $ctx.app 'surface\control-ui') -replace '\\','/'
     $launcher=Join-Path $ctx.app 'surface\launch-surface.ps1'
-    $crmServer=(Join-Path $ctx.app 'mcp\erban-crm\server.mjs') -replace '\\','/'
     $workspace=Join-Path $ctx.app 'agent\workspace'
     $gw=18901; if(Get-NetTCPConnection -LocalPort $gw -State Listen -ErrorAction SilentlyContinue){ $gw=18920; while((Get-NetTCPConnection -LocalPort $gw -State Listen -ErrorAction SilentlyContinue) -and $gw -lt 18999){$gw++}; Log "port shifted to $gw" }
     $gwToken=-join (1..48|ForEach-Object{'0123456789abcdef'[(Get-Random -Maximum 16)]})
     $cfg=[ordered]@{
-      mcp=@{servers=@{'erban-crm'=[ordered]@{command=($node -replace '\\','/');args=@($crmServer)}}}
       agents=@{defaults=[ordered]@{workspace=$workspace;models=[ordered]@{'anthropic/claude-opus-4-8'=@{agentRuntime=@{id='claude-cli'}};'anthropic/claude-sonnet-4-6'=@{agentRuntime=@{id='claude-cli'}}};model=@{primary='anthropic/claude-opus-4-8'}}}
       gateway=[ordered]@{mode='local';port=$gw;bind='loopback';auth=@{mode='token';token=$gwToken};controlUi=@{root=$controlUi}}
-      tools=[ordered]@{
-        profile='minimal'
-        allow=@('erban-crm__list_jobs','erban-crm__get_job','erban-crm__list_customers','erban-crm__get_customer','erban-crm__get_business_profile')
-        deny=@('message','files.write','files.edit','files.apply_patch','files.delete','group:runtime','group:fs','group:web','process','shell','browser','web_fetch','web_search','safe_browser','cron','gateway','nodes','canvas','image','sessions_send','sessions_spawn','memory_store','memory_forget')
-        exec=[ordered]@{security='allowlist';ask='on-miss'}
-      }
       plugins=@{entries=@{anthropic=@{enabled=$true};'file-transfer'=@{enabled=$false};'memory-core'=@{enabled=$false}}}
     }
     $cfg|ConvertTo-Json -Depth 12|Set-Content (Join-Path $ctx.profile 'openclaw.json') -Encoding utf8

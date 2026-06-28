@@ -3,15 +3,13 @@
 // One-click "Sign in with <provider>" for the corner box. Called by the identity
 // helper (server.mjs) over its loopback ws.
 //
-// The installer has ALREADY put the gateway on the hardened claude-cli backend
-// (native tools stripped via `--tools ""`, only the 5 erban-crm MCP tools) and
-// written the claude-cli config. So sign-in only has to AUTHENTICATE the model
-// provider's CLI — no config rewrite, no gateway restart. For Claude that means
-// the `claude` binary's own login (which the claude-cli backend reads), via
-// `claude setup-token` (subscription, long-lived).
+// The installer has ALREADY set up OpenClaw and written its config, so sign-in only
+// has to AUTHENTICATE the model provider's CLI — no config rewrite, no gateway
+// restart. For Claude that means the `claude` binary's own login (which OpenClaw's
+// claude backend reads), via `claude setup-token` (subscription, long-lived).
 //
-// Safety: a provider is only "ready" after auth actually succeeds. Providers
-// whose capability gate isn't proven stay unsupported so the UI disables them.
+// Safety: a provider is only "ready" after auth actually succeeds. Providers whose
+// CLI backend isn't wired up yet stay unsupported so the UI disables them.
 
 import { spawn } from 'node:child_process'
 import { writeFileSync, readFileSync, existsSync } from 'node:fs'
@@ -28,7 +26,7 @@ const PROVIDERS = {
   claude: { id: 'claude', label: 'Claude', supported: true },
   chatgpt: {
     id: 'chatgpt', label: 'ChatGPT', supported: false,
-    reason: 'OpenClaw has no hardened ChatGPT CLI backend (app-server/API only), so the read-and-draft capability gate cannot be enforced yet.'
+    reason: 'OpenClaw has no ChatGPT CLI backend yet (app-server/API only), so one-click sign-in is not wired up.'
   },
   gemini: {
     id: 'gemini', label: 'Gemini', supported: false,

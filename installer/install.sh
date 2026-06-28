@@ -2,7 +2,7 @@
 # Erban one-line installer (macOS / Linux).
 #   curl -fsSL https://erban.xyz/install.sh | bash
 #
-# Sets up OpenClaw + the isolated read-only "erban" profile + gateway.
+# Sets up OpenClaw + an isolated "erban" profile + gateway.
 # NOTE: the corner-box GUI surface is Windows-only in this build. On macOS/Linux
 # this gives you the same agent + Control UI via:  openclaw --profile erban dashboard
 set -euo pipefail
@@ -33,7 +33,6 @@ tmp="$(mktemp -d)"
 curl -fsSL "$BASE/erban-assets.zip" -o "$tmp/erban-assets.zip"
 rm -rf "$APP"; mkdir -p "$APP"
 unzip -q "$tmp/erban-assets.zip" -d "$APP"
-CRM="$APP/mcp/erban-crm/server.mjs"
 WS="$APP/agent/workspace"
 UI="$APP/surface/control-ui"
 
@@ -41,7 +40,6 @@ UI="$APP/surface/control-ui"
 TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 cat > "$PROFILE_DIR/openclaw.json" <<JSON
 {
-  "mcp": { "servers": { "erban-crm": { "command": "$NODE", "args": ["$CRM"] } } },
   "agents": { "defaults": {
     "workspace": "$WS",
     "models": {
@@ -53,11 +51,10 @@ cat > "$PROFILE_DIR/openclaw.json" <<JSON
   "gateway": { "mode": "local", "port": $PORT, "bind": "loopback",
     "auth": { "mode": "token", "token": "$TOKEN" },
     "controlUi": { "root": "$UI" } },
-  "tools": { "profile": "minimal", "deny": ["session_status","message","file_write","file_fetch","dir_list","dir_fetch","memory_get","memory_search","memory_store","memory_forget","web_fetch","web_search","browser","process","shell","canvas","image"] },
   "plugins": { "entries": { "anthropic": { "enabled": true }, "file-transfer": { "enabled": false }, "memory-core": { "enabled": false } } }
 }
 JSON
-echo "[erban] wrote erban profile config (gateway :$PORT, read-only tools)"
+echo "[erban] wrote erban profile config (gateway :$PORT)"
 
 # 4. Start the gateway
 echo "[erban] starting gateway on :$PORT..."

@@ -1,6 +1,6 @@
 /* Erban Business surface overlay - first-run naming + UI cleanup + reset.
    Served only by the Erban OpenClaw gateway (gateway.controlUi.root).
-   No LLM calls. Read-and-draft is unchanged.
+   No LLM calls. Naming + rebrand only.
 
    Name persistence: the workspace (via the identity helper) is the SOURCE OF TRUTH;
    localStorage is a fast UI cache. */
@@ -112,8 +112,8 @@
 
   /* (1) First-run screen (no LLM): name the assistant, then one-click sign in to a model
      provider. Sign-in is delegated to the local helper (provider-auth.mjs), which runs the
-     provider CLI login, points the erban profile at that backend, applies the read-and-draft
-     gate, restarts the gateway and verifies. Only providers the helper reports as supported
+     provider CLI login, points the erban profile at that backend, restarts the gateway and
+     verifies. Only providers the helper reports as supported
      are clickable; the rest render disabled with a "soon" tag. */
   var PROVIDER_LABELS = { claude: "Claude", chatgpt: "ChatGPT", gemini: "Gemini" };
   var PROVIDER_ORDER = ["claude", "chatgpt", "gemini"];
