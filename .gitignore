@@ -6,3 +6,7 @@ mcp/erban-crm/node_modules/
 # build cache / runtime
 node_modules/
 .wrangler/
+
+# website deploy (build artifacts + staging)
+site/artifacts/
+site/.deploy/
