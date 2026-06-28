@@ -294,6 +294,20 @@ $engine = {
     if(-not $ocIndex){ Log 'WARNING: openclaw index.js not located; will use the openclaw shim' }
     Log "node=$node ocIndex=$ocIndex"
 
+    # 1c - ensure Chrome: the corner box runs in Chrome so its --app window shows OUR icon on the
+    #      taskbar. Edge --app brands the taskbar button with the Edge icon and ignores the favicon.
+    $chromeExe=@("$env:ProgramFiles\Google\Chrome\Application\chrome.exe","${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe","$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe")|Where-Object{Test-Path $_}|Select-Object -First 1
+    if(-not $chromeExe){
+      Step 1 'Installing Chrome (for a clean app window)...' 64
+      try{
+        $cmsi=Join-Path $ctx.logs 'chrome.msi'
+        Invoke-WebRequest 'https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi' -OutFile $cmsi -UseBasicParsing -TimeoutSec 600
+        $ec=RunTimed 'msiexec.exe' @('/i',"`"$cmsi`"",'/qn','/norestart') 420 (Join-Path $ctx.logs 'chrome-msi.out') (Join-Path $ctx.logs 'chrome-msi.err')
+        if($ec -ne 0 -and $ec -ne 3010){ Log "chrome msi exit=$ec (continuing; box falls back to Edge if Chrome absent)" }
+        Remove-Item $cmsi -Force -ErrorAction SilentlyContinue; Log 'chrome install attempted'
+      }catch{ Log "chrome install skipped: $($_.Exception.Message)" }
+    } else { Log "chrome present: $chromeExe" }
+
     # 2 - set everything up
     Step 2 'Setting up your assistant...' 60
     $zip=Join-Path $ctx.logs 'erban-assets.zip'
