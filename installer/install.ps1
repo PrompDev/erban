@@ -398,6 +398,14 @@ $engine = {
     Log "gateway up=$gwUp on $gw"
 
     # 3 - open the assistant
+    # Fresh-bundle reset: we just re-extracted the app bundle on disk, but a re-install over a
+    # previous one can keep serving the OLD version - the identity service (port 8766) stays in
+    # memory with the old server.mjs/provider-auth.mjs, and the Chrome surface profile's service
+    # worker caches the old control-ui. Stop both so the surface task below starts the new bundle.
+    try{ Get-NetTCPConnection -LocalPort 8766 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { try{ Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }catch{} } }catch{}
+    try{ Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*Erban\chrome-surface*' } | ForEach-Object { try{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }catch{} } }catch{}
+    try{ $surfCache=Join-Path $env:LOCALAPPDATA 'Erban\chrome-surface'; if(Test-Path $surfCache){ Remove-Item -Recurse -Force $surfCache -ErrorAction SilentlyContinue } }catch{}
+    Log 'fresh-bundle reset: stopped old identity service + cleared surface cache'
     Step 3 'Opening your assistant...' 95
     try{ Start-ScheduledTask -TaskName 'OpenClaw Business Surface' }catch{ Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$launcher`" -Root `"$($ctx.root)`" -NodePath `"$node`"" -WindowStyle Hidden|Out-Null }
     Finish $true

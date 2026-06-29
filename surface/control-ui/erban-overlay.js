@@ -10,6 +10,10 @@
   var FALLBACK = "Assistant";
   var HELPER_WS = "ws://127.0.0.1:8766";
   var currentName = null;
+  // Bump on every shipped bundle. Shown on the first-run screen so we can confirm at a
+  // glance which version a machine is actually running (rules out stale-cache confusion).
+  var BUILD = "2026-06-29.4 paste-bridge";
+  try { console.log("[erban] overlay build " + BUILD); } catch (e) {}
 
   // Capture the launch epoch (?erbanT0=) at script-load time, BEFORE the SPA router can
   // rewrite the URL and drop the query string. Used by the debug timer badge below.
@@ -138,6 +142,7 @@
         '</div>' +
         '<button id="erban-fr-go" class="erban-fr-btn" hidden>Start</button>' +
         '<p id="erban-fr-status" class="erban-fr-status"></p>' +
+        '<p class="erban-fr-build">build ' + BUILD + '</p>' +
       "</div>";
     document.body.appendChild(ov);
     var input = ov.querySelector("#erban-fr-input");
