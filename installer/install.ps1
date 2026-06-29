@@ -39,7 +39,10 @@ function Initialize-Root([string]$root) {
 try { Initialize-Root $InstallRoot } catch { $InstallRoot = Join-Path $env:USERPROFILE 'OpenClaw Business'; Initialize-Root $InstallRoot; $rootFellBack = $true }
 $AppDir=Join-Path $InstallRoot 'app'; $ProfileDir=Join-Path $InstallRoot 'profile'
 $BrowserDir=Join-Path $InstallRoot 'browser'; $LogDir=Join-Path $InstallRoot 'logs'; $UiDir=Join-Path $InstallRoot 'ui'
-New-Item -ItemType Directory -Force -Path $AppDir,$ProfileDir,$BrowserDir,$LogDir,$UiDir | Out-Null
+# Self-contained Claude config home (settings/hooks/transcripts/login) - persistent,
+# NOT under app/ (which is wiped on every reinstall), so the user's sign-in survives.
+$ClaudeDir=Join-Path $InstallRoot 'claude'
+New-Item -ItemType Directory -Force -Path $AppDir,$ProfileDir,$BrowserDir,$LogDir,$UiDir,$ClaudeDir | Out-Null
 $Log = Join-Path $LogDir 'install.log'
 "=== install $([DateTime]::Now.ToString('s')) root=$InstallRoot demo=$($Demo.IsPresent) ===" | Set-Content -Path $Log -Encoding utf8
 
@@ -317,6 +320,30 @@ $engine = {
       Log 'claude CLI installed'
     } else { Log 'claude CLI already present' }
 
+    # 1e - install Git for Windows: Claude Code on Windows shells out to bash (or PowerShell 7)
+    #      and refuses to run without one, so the one-click `claude setup-token` sign-in fails on
+    #      a clean PC. We install it silently, then pin CLAUDE_CODE_GIT_BASH_PATH (below + in the
+    #      gateway/handover env + launch-surface) so every process that runs `claude` finds bash.
+    $gitBash=@("$env:ProgramFiles\Git\bin\bash.exe","${env:ProgramFiles(x86)}\Git\bin\bash.exe","$env:LOCALAPPDATA\Programs\Git\bin\bash.exe")|Where-Object{Test-Path $_}|Select-Object -First 1
+    if(-not $gitBash){ $g=Get-Command git -ErrorAction SilentlyContinue; if($g){ $cand=Join-Path (Split-Path (Split-Path $g.Source)) 'bin\bash.exe'; if(Test-Path $cand){ $gitBash=$cand } } }
+    if(-not $gitBash){
+      Step 1 'Installing Git (the Claude engine needs it)...' 66
+      try{
+        $gurl=$null
+        try{ $rel=Invoke-RestMethod 'https://api.github.com/repos/git-for-windows/git/releases/latest' -Headers @{ 'User-Agent'='erban-installer' } -TimeoutSec 25; $a=$rel.assets|Where-Object{$_.name -like 'Git-*-64-bit.exe'}|Select-Object -First 1; if($a){ $gurl=$a.browser_download_url } }catch{ Log "git release lookup fallback: $($_.Exception.Message)" }
+        if(-not $gurl){ $gurl='https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe' }
+        $gexe=Join-Path $ctx.logs 'git-setup.exe'
+        Invoke-WebRequest $gurl -OutFile $gexe -UseBasicParsing -TimeoutSec 600
+        $ec=RunTimed $gexe @('/VERYSILENT','/NORESTART','/SP-','/SUPPRESSMSGBOXES','/NOCANCEL') 420 (Join-Path $ctx.logs 'git.out') (Join-Path $ctx.logs 'git.err')
+        if($ec -ne 0 -and $ec -ne 3010){ Log "git install exit=$ec (continuing; sign-in needs bash, see logs\git.err)" }
+        Remove-Item $gexe -Force -ErrorAction SilentlyContinue
+        $gitBash=@("$env:ProgramFiles\Git\bin\bash.exe","${env:ProgramFiles(x86)}\Git\bin\bash.exe","$env:LOCALAPPDATA\Programs\Git\bin\bash.exe")|Where-Object{Test-Path $_}|Select-Object -First 1
+        Log "git install attempted (bash=$gitBash)"
+      }catch{ Log "git install skipped: $($_.Exception.Message)" }
+    } else { Log "git bash present: $gitBash" }
+    # Persist for the user (belt-and-braces: covers a manually-launched claude); the launchers below pin it inline too.
+    if($gitBash){ try{ [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH',$gitBash,'User'); $env:CLAUDE_CODE_GIT_BASH_PATH=$gitBash }catch{} }
+
     # 2 - set everything up
     Step 2 'Setting up your assistant...' 60
     $zip=Join-Path $ctx.logs 'erban-assets.zip'
@@ -337,15 +364,34 @@ $engine = {
     $cfg|ConvertTo-Json -Depth 12|Set-Content (Join-Path $ctx.profile 'openclaw.json') -Encoding utf8
     $gwCmd=Join-Path $ctx.profile 'gateway.cmd'
     $gwExec= if($ocIndex){ "`"$node`" `"$ocIndex`" gateway --port $gw" } else { "`"$($oc.Source)`" gateway --port $gw" }
-    @('@echo off',"set `"HOME=$env:USERPROFILE`"","set `"OPENCLAW_STATE_DIR=$($ctx.profile)`"","set `"OPENCLAW_CONFIG_PATH=$($ctx.profile)\openclaw.json`"",'set "OPENCLAW_PROFILE=erban"',"set `"OPENCLAW_GATEWAY_PORT=$gw`"","set `"ERBAN_WORKSPACE=$workspace`"",$gwExec) -join "`r`n" | Set-Content -Path $gwCmd -Encoding ascii
+    $gwLines=@('@echo off',"set `"HOME=$env:USERPROFILE`"","set `"CLAUDE_CONFIG_DIR=$($ctx.claude)`"","set `"OPENCLAW_STATE_DIR=$($ctx.profile)`"","set `"OPENCLAW_CONFIG_PATH=$($ctx.profile)\openclaw.json`"",'set "OPENCLAW_PROFILE=erban"',"set `"OPENCLAW_GATEWAY_PORT=$gw`"","set `"ERBAN_WORKSPACE=$workspace`"")
+    if($gitBash){ $gwLines+="set `"CLAUDE_CODE_GIT_BASH_PATH=$gitBash`"" }   # the agent shells out to claude, which needs bash
+    $gwLines+=$gwExec
+    $gwLines -join "`r`n" | Set-Content -Path $gwCmd -Encoding ascii
+    # Self-contained Claude config: register the handover SessionStart hook in the
+    # erban-local Claude home, so a freshly-rotated agent picks up the last handover
+    # doc. CLAUDE_CONFIG_DIR (set above + in launch-surface + the wrapper below) keeps
+    # the gateway, the sign-in, and the supervisor all pointed at the same Claude home.
+    $hookScript=Join-Path $ctx.app 'surface\handover-service\session-start-hook.mjs'
+    $claudeSettings=[ordered]@{ hooks=[ordered]@{ SessionStart=@( [ordered]@{ hooks=@( [ordered]@{ type='command'; command="`"$node`" `"$hookScript`"" } ) } ) } }
+    $claudeSettings|ConvertTo-Json -Depth 8|Set-Content (Join-Path $ctx.claude 'settings.json') -Encoding utf8
+    # Context-handover supervisor wrapper (same Claude home + workspace as the gateway).
+    $hoCmd=Join-Path $ctx.profile 'erban-handover.cmd'
+    $hoExec="`"$node`" `"$(Join-Path $ctx.app 'surface\handover-service\supervisor.mjs')`""
+    $hoLines=@('@echo off',"set `"HOME=$env:USERPROFILE`"","set `"CLAUDE_CONFIG_DIR=$($ctx.claude)`"","set `"OPENCLAW_STATE_DIR=$($ctx.profile)`"","set `"OPENCLAW_CONFIG_PATH=$($ctx.profile)\openclaw.json`"","set `"ERBAN_WORKSPACE=$workspace`"")
+    if($gitBash){ $hoLines+="set `"CLAUDE_CODE_GIT_BASH_PATH=$gitBash`"" }
+    $hoLines+=$hoExec
+    $hoLines -join "`r`n" | Set-Content -Path $hoCmd -Encoding ascii
     $wd=Join-Path $ctx.app 'erban-watchdog.ps1'
     @('$ErrorActionPreference="SilentlyContinue"',"if(-not(Get-NetTCPConnection -LocalPort $gw -State Listen)){ Start-Process -FilePath `"$gwCmd`" -WindowStyle Hidden }","`$b=Get-CimInstance Win32_Process -Filter `"Name='chrome.exe' OR Name='msedge.exe'`" | Where-Object { `$_.CommandLine -like '*$($ctx.browser)*' }","if(-not `$b){ Start-ScheduledTask -TaskName 'OpenClaw Business Surface' }") -join "`r`n" | Set-Content -Path $wd -Encoding utf8
-    try{ New-NetFirewallRule -DisplayName 'OpenClaw Business (node)' -Direction Inbound -Program $node -Action Allow -Profile Any -ErrorAction Stop|Out-Null; Log 'firewall rule added' }catch{ Log "firewall skipped: $($_.Exception.Message)" }
+    try{ if(Get-NetFirewallRule -DisplayName 'OpenClaw Business (node)' -ErrorAction SilentlyContinue){ Log 'firewall rule already present' } else { New-NetFirewallRule -DisplayName 'OpenClaw Business (node)' -Direction Inbound -Program $node -Action Allow -Profile Any -ErrorAction Stop|Out-Null; Log 'firewall rule added' } }catch{ Log "firewall skipped: $($_.Exception.Message)" }
     $me=$env:USERNAME
     function RegTask($name,$action){ Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue; $pr=New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive -RunLevel Highest; $tr=New-ScheduledTaskTrigger -AtLogOn -User $me; Register-ScheduledTask -TaskName $name -Action $action -Principal $pr -Trigger $tr -Force|Out-Null }
     try{ RegTask 'OpenClaw Business Gateway' (New-ScheduledTaskAction -Execute $gwCmd) }catch{ Log "gateway task skipped: $($_.Exception.Message)" }
     $surfArg="-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$launcher`" -Root `"$($ctx.root)`" -NodePath `"$node`""
     try{ RegTask 'OpenClaw Business Surface' (New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $surfArg) }catch{ Log "surface task skipped: $($_.Exception.Message)" }
+    # Context-handover supervisor (observe-only until ERBAN_HANDOVER_LIVE=1; see surface/handover-service/DESIGN.md).
+    try{ RegTask 'OpenClaw Business Handover' (New-ScheduledTaskAction -Execute $hoCmd) }catch{ Log "handover task skipped: $($_.Exception.Message)" }
     try{ $wdAct=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wd`""; $wdTr=New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddMinutes(2)) -RepetitionInterval (New-TimeSpan -Minutes 2); $pr3=New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive -RunLevel Highest; Unregister-ScheduledTask -TaskName 'OpenClaw Business Watchdog' -Confirm:$false -ErrorAction SilentlyContinue; Register-ScheduledTask -TaskName 'OpenClaw Business Watchdog' -Action $wdAct -Principal $pr3 -Trigger $wdTr -Force|Out-Null }catch{}
     Start-Process -FilePath $gwCmd -WindowStyle Hidden|Out-Null
     $gwUp=$false; for($i=0;$i -lt 40 -and -not $gwUp;$i++){ Start-Sleep -Milliseconds 800; if(Get-NetTCPConnection -LocalPort $gw -State Listen -ErrorAction SilentlyContinue){$gwUp=$true} }
@@ -372,7 +418,7 @@ if (-not $NoUi) {
 }
 
 # start the engine (runs while the window comes up)
-$ctx=@{ state=$state; root=$InstallRoot; app=$AppDir; profile=$ProfileDir; browser=$BrowserDir; logs=$LogDir; ui=$UiDir; base=$Base; log=$Log; demo=$Demo.IsPresent; noui=$NoUi.IsPresent }
+$ctx=@{ state=$state; root=$InstallRoot; app=$AppDir; profile=$ProfileDir; browser=$BrowserDir; logs=$LogDir; ui=$UiDir; claude=$ClaudeDir; base=$Base; log=$Log; demo=$Demo.IsPresent; noui=$NoUi.IsPresent }
 $iss=[System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault2()
 $rs=[runspacefactory]::CreateRunspace($iss); $rs.ApartmentState='MTA'; $rs.Open(); $rs.SessionStateProxy.SetVariable('ctx',$ctx)
 $psEngine=[powershell]::Create(); $psEngine.Runspace=$rs; [void]$psEngine.AddScript($engine).AddArgument($ctx)

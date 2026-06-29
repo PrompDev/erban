@@ -5,15 +5,16 @@
 # The repo is the source of truth for the static site + installers. The two large build
 # artifacts are NOT committed (derivable, kept out of git) and must be present in
 # site/artifacts/ before deploying:
-#   - erban-assets.zip                 the app bundle install.ps1 downloads (zip of ../surface + ../mcp + ../agent)
+#   - erban-assets.zip                 the app bundle install.ps1 downloads (zip of ../surface + ../agent)
 #   - OpenClaw-for-Business-Setup.exe  ps2exe wrapper of ../installer/install.ps1
 # Recover the current live ones if you don't have them:
 #   iwr https://erban.xyz/erban-assets.zip                -OutFile site/artifacts/erban-assets.zip
 #   iwr https://erban.xyz/OpenClaw-for-Business-Setup.exe -OutFile site/artifacts/OpenClaw-for-Business-Setup.exe
 #
-# NOTE: erban-assets.zip is currently the STABLE (pre-gate) app bundle. Do NOT rebuild it from the
-# current ../surface until the installer is updated to drive the claude-cli gate + one-click sign-in,
-# or the box will ship a non-working sign-in. See ../README.md "Status / known gaps".
+# The claude-cli gate + one-click sign-in are now wired through the installer AND the surface
+# launcher, so rebuilding erban-assets.zip from the current ../surface + ../agent is the supported
+# path. Exclude per-install markers (agent/workspace/erban-provider.json) so a fresh box still shows
+# first-run sign-in.
 #
 # Requires wrangler auth (npx wrangler whoami). Run:  powershell -File site/deploy.ps1
 

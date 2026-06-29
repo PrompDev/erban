@@ -6,6 +6,9 @@
 node_modules/
 .wrangler/
 
+# per-install marker written at first-run sign-in (never ship it, or fresh boxes skip sign-in)
+agent/workspace/erban-provider.json
+
 # website deploy (build artifacts + staging)
 site/artifacts/
 site/.deploy/
