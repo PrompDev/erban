@@ -69,6 +69,7 @@
   function providerGet() { return call({ action: "provider-get" }); }
   function signinStart(provider) { return call({ action: "signin-start", provider: provider }); }
   function signinStatus() { return call({ action: "signin-status" }); }
+  function signinCode(code) { return call({ action: "signin-code", code: code }); }
 
   /* (4) Rename sweep: OpenClaw Control -> OpenClaw Business; bare Control -> Business. */
   function rebrand() {
@@ -130,6 +131,11 @@
         '<input id="erban-fr-input" class="erban-fr-input" type="text" maxlength="40" autocomplete="off" placeholder="e.g. Ros, Mate, Banksy" />' +
         '<div class="erban-fr-or">Sign in to finish</div>' +
         '<div class="erban-fr-providers" id="erban-fr-providers"></div>' +
+        '<div id="erban-fr-code" class="erban-fr-code" hidden>' +
+          '<input id="erban-fr-code-input" class="erban-fr-input" type="text" autocomplete="off" placeholder="Paste your sign-in code here" />' +
+          '<button id="erban-fr-code-go" class="erban-fr-btn" type="button">Finish sign-in</button>' +
+          '<a id="erban-fr-code-link" class="erban-fr-link" target="_blank" rel="noopener">Open the sign-in page again</a>' +
+        '</div>' +
         '<button id="erban-fr-go" class="erban-fr-btn" hidden>Start</button>' +
         '<p id="erban-fr-status" class="erban-fr-status"></p>' +
       "</div>";
@@ -138,6 +144,10 @@
     var provWrap = ov.querySelector("#erban-fr-providers");
     var go = ov.querySelector("#erban-fr-go");
     var status = ov.querySelector("#erban-fr-status");
+    var codeBox = ov.querySelector("#erban-fr-code");
+    var codeInput = ov.querySelector("#erban-fr-code-input");
+    var codeGo = ov.querySelector("#erban-fr-code-go");
+    var codeLink = ov.querySelector("#erban-fr-code-link");
     setTimeout(function () { try { input.focus(); } catch (e) {} }, 60);
     var busy = false;
 
@@ -189,14 +199,23 @@
       });
     }
 
+    function showCodeEntry(url) {
+      if (url) codeLink.href = url;
+      if (codeBox.hidden) {
+        codeBox.hidden = false;
+        setTimeout(function () { try { codeInput.focus(); } catch (e) {} }, 60);
+      }
+    }
+    function hideCodeEntry() { codeBox.hidden = true; }
+
     function pollSignin(provider, btn) {
-      var tries = 0;
+      var tries = 0, codeWired = false;
       var iv = setInterval(function () {
         tries++;
         signinStatus().then(function (s) {
           if (!s) return; // transient ws miss; keep polling
           if (s.status === "ready") {
-            clearInterval(iv);
+            clearInterval(iv); hideCodeEntry();
             btn.classList.remove("is-working"); btn.classList.add("is-done");
             var lbl = btn.querySelector(".erban-fr-prov-label");
             if (lbl) lbl.textContent = "Signed in with " + (PROVIDER_LABELS[provider] || provider);
@@ -204,11 +223,30 @@
             setStatus("Signed in. You're ready.");
             go.hidden = false; try { go.focus(); } catch (e) {}
           } else if (s.status === "error" || s.status === "unsupported") {
-            clearInterval(iv); failSignin(btn, s.error || "Sign-in failed.");
+            clearInterval(iv); hideCodeEntry(); failSignin(btn, s.error || "Sign-in failed.");
+          } else if (s.status === "awaiting-code") {
+            // The browser sign-in page is open; the user pastes the code it gives them.
+            tries = 0; // pause the timeout clock while we wait on the human
+            showCodeEntry(s.url);
+            setStatus("Signed in on the website? Paste the code it gave you below.");
+            if (!codeWired) {
+              codeWired = true;
+              var submit = function () {
+                var code = (codeInput.value || "").trim();
+                if (!code) { try { codeInput.focus(); } catch (e) {} return; }
+                codeGo.disabled = true; codeInput.disabled = true;
+                setStatus("Finishing sign-in…");
+                signinCode(code).then(function (r) {
+                  if (!r || !r.ok) { codeGo.disabled = false; codeInput.disabled = false; setStatus((r && r.error) || "That code didn't work. Try again."); }
+                });
+              };
+              codeGo.addEventListener("click", submit);
+              codeInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); submit(); } });
+            }
           } else if (s.step) {
             setStatus("Signing in… (" + s.step + ")");
           }
-          if (tries > 240) { clearInterval(iv); failSignin(btn, "Sign-in timed out."); }
+          if (tries > 240) { clearInterval(iv); hideCodeEntry(); failSignin(btn, "Sign-in timed out."); }
         });
       }, 1500);
     }

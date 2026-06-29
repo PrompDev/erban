@@ -80,17 +80,72 @@ async function runFlow (p) {
   throw new Error('provider not implemented: ' + p.id)
 }
 
+// The live `claude setup-token` child while we're waiting for the user's pasted code.
+let signinChild = null
+const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+
+// `claude setup-token` is an interactive browser+paste flow: it prints an OAuth URL,
+// the user authorises in a browser, claude.com shows them a code, and they paste it
+// back on stdin. We drive that headlessly: open the URL for them, surface the
+// 'awaiting-code' state to the box UI, and write their pasted code to the child stdin.
 async function runClaudeFlow (p) {
-  state = { ...state, step: 'auth' }
-  if (!(await claudeIsAuthed())) {
-    // Opens the browser for the subscription OAuth; persists to the claude binary's own store.
-    const r = await run(CLAUDE_BIN, ['setup-token'], { timeoutMs: 300000 })
-    if (!(await claudeIsAuthed())) {
-      throw new Error('Claude sign-in did not complete: ' + (r.stderr || r.stdout || ('exit ' + r.code)).trim().slice(0, 300))
-    }
+  state = { provider: p.id, status: 'signing-in', step: 'auth', error: null, url: null }
+  if (await claudeIsAuthed()) {
+    persistProvider(p.id)
+    state = { provider: p.id, status: 'ready', step: 'done', error: null, url: null }
+    return
   }
+  await new Promise((resolve, reject) => {
+    let out = '', urlSent = false, settled = false
+    const child = spawn(CLAUDE_BIN, ['setup-token'], { shell: true, windowsHide: true })
+    signinChild = child
+    const settle = (fn, arg) => { if (settled) return; settled = true; clearTimeout(timer); signinChild = null; fn(arg) }
+    const scan = (buf) => {
+      out += buf.toString()
+      if (urlSent) return
+      const clean = stripAnsi(out)
+      const m = clean.match(/https?:\/\/\S*oauth\/authorize\S*/i)
+      // Act only once the WHOLE url has arrived (a newline or the paste prompt follows it),
+      // so a chunk boundary mid-url can't hand the UI a truncated link.
+      if (m && (/paste code/i.test(clean) || /[\r\n]/.test(clean.slice(m.index + m[0].length)))) {
+        urlSent = true
+        const url = m[0]
+        state = { provider: p.id, status: 'awaiting-code', step: 'authorize', error: null, url }
+        openBrowser(url)
+      }
+    }
+    child.stdout && child.stdout.on('data', scan)
+    child.stderr && child.stderr.on('data', scan)
+    // Generous window: a human has to open the browser, sign in, and paste a code back.
+    const timer = setTimeout(() => { try { child.kill() } catch (e) {} settle(reject, new Error('Claude sign-in timed out waiting for the code.')) }, 900000)
+    child.on('error', (e) => settle(reject, e))
+    child.on('close', async () => {
+      if (await claudeIsAuthed()) settle(resolve)
+      else settle(reject, new Error('Claude sign-in did not complete: ' + (stripAnsi(out).trim().slice(-300) || 'no output')))
+    })
+  })
   persistProvider(p.id)
-  state = { provider: p.id, status: 'ready', step: 'done', error: null }
+  state = { provider: p.id, status: 'ready', step: 'done', error: null, url: null }
+}
+
+// Feed the user's pasted authorization code to the waiting setup-token child.
+export function submitCode (codeRaw) {
+  const code = String(codeRaw || '').trim()
+  if (!signinChild || !signinChild.stdin || signinChild.stdin.destroyed) return { ok: false, error: 'no sign-in is waiting for a code' }
+  if (!code) return { ok: false, error: 'code required' }
+  try {
+    signinChild.stdin.write(code + '\n')
+    state = { ...state, status: 'signing-in', step: 'finishing', url: null }
+    return { ok: true }
+  } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+}
+
+// Open the OAuth url in the user's default browser (best-effort; the box also shows it).
+function openBrowser (url) {
+  try {
+    const u = String(url).replace(/'/g, "''")
+    spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', `Start-Process '${u}'`], { windowsHide: true, stdio: 'ignore' })
+  } catch (e) {}
 }
 
 // `claude auth status` exits 0 when the binary is signed in (independent of where creds live).
