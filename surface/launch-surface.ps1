@@ -9,6 +9,8 @@
 #   ...optional: -Profile erban -Width 440 -Height 760 -RemoteDebugPort 9222
 
 param(
+  [string]$Root = "",        # install root (C:\OpenClawBusiness). The installer passes this; config lives under $Root\profile.
+  [string]$NodePath = "",    # node.exe the installer resolved (Scheduled-Task PATH may not include it).
   [string]$Profile = "erban",
   [int]$Width = 440,
   [int]$Height = 760,
@@ -32,8 +34,10 @@ function T($msg) {
 }
 T "launch start (pid $PID)"
 
-# Resolve node (Scheduled-Task PATH may not include it).
-$node = "C:\Program Files\nodejs\node.exe"; if (-not (Test-Path $node)) { $node = "node" }
+# Resolve node (Scheduled-Task PATH may not include it). Prefer the path the installer
+# resolved; fall back to the default install location, then bare "node" on PATH.
+$node = if ($NodePath -and (Test-Path $NodePath)) { $NodePath } else { "C:\Program Files\nodejs\node.exe" }
+if (-not (Test-Path $node)) { $node = "node" }
 
 # Taskbar identity. A Chrome --app window has no stable identity, so a pinned one
 # falls back to the generic Chrome icon and the pin breaks on relaunch. We stamp the
@@ -45,8 +49,14 @@ $displayName = "Erban"
 $psExe       = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 $relaunchCmd = "`"$psExe`" -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`""
 
-# Workspace = server-side source of truth for the assistant name.
-$wsDir  = Join-Path (Split-Path $PSScriptRoot -Parent) "agent\workspace"
+# Workspace = server-side source of truth for the assistant name. Prefer the install
+# root's bundle copy ($Root\app\agent\workspace) when the installer passed -Root; else
+# derive it from this script's location (works when run from the extracted bundle or dev).
+$wsDir = if ($Root -and (Test-Path (Join-Path $Root "app\agent\workspace"))) { Join-Path $Root "app\agent\workspace" }
+         else { Join-Path (Split-Path $PSScriptRoot -Parent) "agent\workspace" }
+# Hand the workspace to every node child we spawn (the identity helper + provider-auth),
+# so they write the name/provider HERE and not their hardcoded dev fallback path.
+$env:ERBAN_WORKSPACE = $wsDir
 $idJson = Join-Path $wsDir "erban-identity.json"
 $idMd   = Join-Path $wsDir "IDENTITY.md"
 # Active model-provider marker, written by the first-run sign-in (provider-auth.mjs).
@@ -84,7 +94,10 @@ if ($Reset) {
 }
 
 # 1. Detect the running Erban gateway dashboard URL at runtime (port + token from its config).
-$cfgPath = Join-Path $env:USERPROFILE ".openclaw-$Profile\openclaw.json"
+# The self-contained Windows installer writes config to $Root\profile\openclaw.json; the
+# dev/macOS layout uses ~/.openclaw-$Profile. Prefer the install root, fall back to the profile dir.
+$cfgPath = if ($Root -and (Test-Path (Join-Path $Root "profile\openclaw.json"))) { Join-Path $Root "profile\openclaw.json" }
+           else { Join-Path $env:USERPROFILE ".openclaw-$Profile\openclaw.json" }
 if (-not (Test-Path $cfgPath)) { throw "Erban config not found: $cfgPath" }
 $cfg = Get-Content -Raw $cfgPath | ConvertFrom-Json
 $port = $cfg.gateway.port
@@ -99,12 +112,15 @@ $up = [bool](Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Si
 if ($up) {
   T "gateway already up on :$port"
 } else {
-  $gwTask = "OpenClaw Gateway ($Profile)"
-  if (Get-ScheduledTask -TaskName $gwTask -ErrorAction SilentlyContinue) {
+  # The Windows installer registers 'OpenClaw Business Gateway'; the dev/macOS layout used
+  # 'OpenClaw Gateway (erban)'. Kick whichever exists.
+  $gwTask = @("OpenClaw Business Gateway", "OpenClaw Gateway ($Profile)") |
+            Where-Object { Get-ScheduledTask -TaskName $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
+  if ($gwTask) {
     Start-ScheduledTask -TaskName $gwTask
     T "gateway was down; kicked '$gwTask' (UI reconnects when it binds)"
   } else {
-    T "gateway down; no '$gwTask' task found"
+    T "gateway down; no gateway task found"
   }
 }
 $base = "http://127.0.0.1:$port/"

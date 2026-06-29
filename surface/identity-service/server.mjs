@@ -15,12 +15,16 @@
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { startSignin, getState as getSigninState, getActiveProvider, listProviders } from './provider-auth.mjs'
 
 const PORT = Number(process.env.ERBAN_IDENTITY_PORT || 8766)
 const HOST = '127.0.0.1'
-const WORKSPACE = process.env.ERBAN_WORKSPACE || 'C:/Users/alias/Downloads/file2212s/agent/workspace'
+// Source of truth = the agent workspace. The launcher passes ERBAN_WORKSPACE; if it's
+// absent (helper run standalone), fall back to the bundle's own layout: this file lives
+// at <bundle>/surface/identity-service/, so the workspace is ../../agent/workspace.
+const WORKSPACE = process.env.ERBAN_WORKSPACE || join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'agent', 'workspace')
 const NAME_JSON = join(WORKSPACE, 'erban-identity.json')
 const IDENTITY_MD = join(WORKSPACE, 'IDENTITY.md')
 

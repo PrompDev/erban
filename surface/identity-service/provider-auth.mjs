@@ -13,11 +13,13 @@
 
 import { spawn } from 'node:child_process'
 import { writeFileSync, readFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 
 const HOME = process.env.USERPROFILE || homedir()
-const WORKSPACE = process.env.ERBAN_WORKSPACE || 'C:/Users/alias/Downloads/file2212s/agent/workspace'
+// Same workspace resolution as server.mjs: ERBAN_WORKSPACE, else the bundle's own layout.
+const WORKSPACE = process.env.ERBAN_WORKSPACE || join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'agent', 'workspace')
 const PROVIDER_JSON = join(WORKSPACE, 'erban-provider.json')
 const CLAUDE_BIN = process.env.ERBAN_CLAUDE_BIN || 'claude'
 
