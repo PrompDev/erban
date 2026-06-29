@@ -12,7 +12,7 @@
 // CLI backend isn't wired up yet stay unsupported so the UI disables them.
 
 import { spawn } from 'node:child_process'
-import { writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync, mkdirSync, copyFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
@@ -111,7 +111,7 @@ const readyState = (p) => ({ provider: p.id, status: 'ready', step: 'done', erro
 
 async function runClaudeFlow (p) {
   state = { provider: p.id, status: 'signing-in', step: 'auth', error: null, url: null }
-  if (await claudeIsAuthed()) { persistProvider(p.id); state = readyState(p); return }
+  if (await claudeIsAuthed()) { persistProvider(p.id); mirrorClaudeCreds(); state = readyState(p); return }
   let ptyMod
   try { ptyMod = (await import('./vendor/node-pty/lib/index.js')).default }
   catch (e) { throw new Error('sign-in component failed to load: ' + (e && e.message || e)) }
@@ -152,7 +152,27 @@ async function runClaudeFlow (p) {
     timer = setTimeout(() => settle(reject, new Error('Sign-in timed out.')), 900000)
   })
   persistProvider(p.id)
+  mirrorClaudeCreds()
   state = readyState(p)
+}
+
+// CRITICAL: OpenClaw's gateway spawns `claude` WITHOUT our CLAUDE_CONFIG_DIR, so claude reads its
+// DEFAULT home (~/.claude). Sign-in wrote the OAuth creds to CLAUDE_CONFIG_DIR (the self-contained
+// home), so the agent reported "Not logged in". Mirror the creds into ~/.claude so the gateway's
+// claude is authenticated too. (Verified: copying .credentials.json+.claude.json makes default-dir
+// `claude -p` authed.) See [[HANDOFF-login-issue]].
+function mirrorClaudeCreds () {
+  try {
+    const src = process.env.CLAUDE_CONFIG_DIR
+    if (!src) return // dev layout already uses ~/.claude
+    const dst = join(HOME, '.claude')
+    if (src.toLowerCase() === dst.toLowerCase()) return
+    mkdirSync(dst, { recursive: true })
+    for (const f of ['.credentials.json', '.claude.json']) {
+      const s = join(src, f)
+      if (existsSync(s)) { try { copyFileSync(s, join(dst, f)) } catch (e) {} }
+    }
+  } catch (e) {}
 }
 
 // Write the user's pasted code into the live PTY to finish the paste flow.
