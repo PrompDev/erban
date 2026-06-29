@@ -20,7 +20,7 @@ $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 # Shown bottom-right of the installer window AND (kept in sync) on the first-run box, so the
 # running version is visible at a glance. Bump on every shipped build.
-$ErbanVersion = '2026-06-30.12 lifecycle'
+$ErbanVersion = '2026-06-30.13 agent+icon'
 
 # Run elevated (create the folder, register auto-start, pre-authorise the firewall) -
 # one UAC, no mid-install failures. The .exe already requests admin; this covers the one-liner.
@@ -359,6 +359,16 @@ $engine = {
     # Persist for the user (belt-and-braces: covers a manually-launched claude); the launchers below pin it inline too.
     if($gitBash){ try{ [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH',$gitBash,'User'); $env:CLAUDE_CODE_GIT_BASH_PATH=$gitBash }catch{} }
 
+    # Resolve the claude EXECUTABLE dir. npm only puts claude.cmd on PATH, which Node's spawn()
+    # CANNOT run -> OpenClaw's gateway gets "spawn claude ENOENT". The real claude.exe lives in the
+    # package bin (or ~/.local/bin for a native install). We put its DIR on PATH (gateway.cmd below
+    # + the user PATH) so OpenClaw can spawn the agent. Verified: pkg bin resolves, npm bin doesn't.
+    $claudeExe=@("$env:APPDATA\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe","$env:USERPROFILE\.local\bin\claude.exe")|Where-Object{Test-Path $_}|Select-Object -First 1
+    $claudeDir=if($claudeExe){ Split-Path $claudeExe } else { "$env:APPDATA\npm\node_modules\@anthropic-ai\claude-code\bin" }
+    $npmBin=Join-Path $env:APPDATA 'npm'
+    try{ $cur=[Environment]::GetEnvironmentVariable('Path','User'); $add=@($claudeDir,$npmBin)|Where-Object{ $_ -and (($cur -split ';') -notcontains $_) }; if($add){ [Environment]::SetEnvironmentVariable('Path',(($add+($cur -split ';')) -join ';'),'User') } }catch{}
+    Log "claude exe dir = $claudeDir (exe found: $([bool]$claudeExe))"
+
     # 2 - set everything up
     Step 2 'Setting up your assistant...' 60
     $zip=Join-Path $ctx.logs 'erban-assets.zip'
@@ -369,6 +379,16 @@ $engine = {
     $controlUi=(Join-Path $ctx.app 'surface\control-ui') -replace '\\','/'
     $launcher=Join-Path $ctx.app 'surface\launch-surface.ps1'
     $workspace=Join-Path $ctx.app 'agent\workspace'
+    # Build the OpenClaw-logo .ico the box stamps on its taskbar window (launch-surface reads
+    # %LOCALAPPDATA%\Erban\erban.ico). Without it the box shows the generic Chrome icon.
+    $boxIco=Join-Path $env:LOCALAPPDATA 'Erban\erban.ico'
+    try{
+      & (Join-Path $ctx.app 'surface\make-icon.ps1') | Out-Null
+      if(Test-Path $boxIco){ Log "box icon built: $boxIco" } else { throw 'make-icon produced no file' }
+    }catch{
+      Log "make-icon failed ($($_.Exception.Message)); copying favicon.ico"
+      try{ New-Item -ItemType Directory -Force (Split-Path $boxIco) | Out-Null; Copy-Item (Join-Path $ctx.app 'surface\control-ui\favicon.ico') $boxIco -Force -ErrorAction SilentlyContinue }catch{}
+    }
     $gw=18901; if(Get-NetTCPConnection -LocalPort $gw -State Listen -ErrorAction SilentlyContinue){ $gw=18920; while((Get-NetTCPConnection -LocalPort $gw -State Listen -ErrorAction SilentlyContinue) -and $gw -lt 18999){$gw++}; Log "port shifted to $gw" }
     $gwToken=-join (1..48|ForEach-Object{'0123456789abcdef'[(Get-Random -Maximum 16)]})
     $cfg=[ordered]@{
@@ -380,6 +400,7 @@ $engine = {
     $gwCmd=Join-Path $ctx.profile 'gateway.cmd'
     $gwExec= if($ocIndex){ "`"$node`" `"$ocIndex`" gateway --port $gw" } else { "`"$($oc.Source)`" gateway --port $gw" }
     $gwLines=@('@echo off',"set `"HOME=$env:USERPROFILE`"","set `"CLAUDE_CONFIG_DIR=$($ctx.claude)`"","set `"OPENCLAW_STATE_DIR=$($ctx.profile)`"","set `"OPENCLAW_CONFIG_PATH=$($ctx.profile)\openclaw.json`"",'set "OPENCLAW_PROFILE=erban"',"set `"OPENCLAW_GATEWAY_PORT=$gw`"","set `"ERBAN_WORKSPACE=$workspace`"")
+    $gwLines+="set `"PATH=$claudeDir;$npmBin;%PATH%`""   # so OpenClaw can spawn claude.exe (npm only ships claude.cmd, which Node spawn can't run)
     if($gitBash){ $gwLines+="set `"CLAUDE_CODE_GIT_BASH_PATH=$gitBash`"" }   # the agent shells out to claude, which needs bash
     $gwLines+=$gwExec
     $gwLines -join "`r`n" | Set-Content -Path $gwCmd -Encoding ascii
@@ -412,15 +433,16 @@ $engine = {
     Log "launcher written: $vbs"
     # Start Menu entry -> Windows search finds "OpenClaw Business" and launches it; also the pin target.
     try{
-      $icoSrc=Join-Path $ctx.app 'surface\control-ui\favicon.ico'
-      $ico=Join-Path $ctx.root 'erban.ico'; if(Test-Path $icoSrc){ try{ Copy-Item $icoSrc $ico -Force -ErrorAction SilentlyContinue }catch{} }
+      # Use the same OpenClaw-logo .ico the box uses (built above), so the shortcut/pin and the
+      # box window show one consistent logo. Fall back to the bundled favicon.ico.
+      $icoForLnk=if(Test-Path $boxIco){ $boxIco } else { Join-Path $ctx.app 'surface\control-ui\favicon.ico' }
       $progs=Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'; New-Item -ItemType Directory -Force $progs|Out-Null
       $wsh=New-Object -ComObject WScript.Shell
       $sc=$wsh.CreateShortcut((Join-Path $progs 'OpenClaw Business.lnk'))
       $sc.TargetPath=Join-Path $env:SystemRoot 'System32\wscript.exe'
       $sc.Arguments='"'+$vbs+'"'
       $sc.WorkingDirectory=$ctx.app
-      if(Test-Path $ico){ $sc.IconLocation="$ico,0" } elseif(Test-Path $icoSrc){ $sc.IconLocation="$icoSrc,0" }
+      if(Test-Path $icoForLnk){ $sc.IconLocation="$icoForLnk,0" }
       $sc.Description='OpenClaw Business'; $sc.Save()
       Log 'Start Menu shortcut created (searchable + pinnable)'
     }catch{ Log "shortcut skipped: $($_.Exception.Message)" }
