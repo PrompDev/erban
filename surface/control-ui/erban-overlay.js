@@ -12,7 +12,7 @@
   var currentName = null;
   // Bump on every shipped bundle. Shown on the first-run screen so we can confirm at a
   // glance which version a machine is actually running (rules out stale-cache confusion).
-  var BUILD = "2026-06-29.6 oauth-loopback";
+  var BUILD = "2026-06-29.7 oauth-loopback";
   try { console.log("[erban] overlay build " + BUILD); } catch (e) {}
 
   // Capture the launch epoch (?erbanT0=) at script-load time, BEFORE the SPA router can

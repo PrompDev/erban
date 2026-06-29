@@ -20,7 +20,7 @@ $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 # Shown bottom-right of the installer window AND (kept in sync) on the first-run box, so the
 # running version is visible at a glance. Bump on every shipped build.
-$ErbanVersion = '2026-06-29.6 oauth-loopback'
+$ErbanVersion = '2026-06-29.7 oauth-loopback'
 
 # Run elevated (create the folder, register auto-start, pre-authorise the firewall) -
 # one UAC, no mid-install failures. The .exe already requests admin; this covers the one-liner.

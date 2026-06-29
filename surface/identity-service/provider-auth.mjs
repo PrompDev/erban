@@ -108,8 +108,13 @@ async function runClaudeFlow (p) {
 function openSigninTerminal () {
   const wrapper = join(dirname(fileURLToPath(import.meta.url)), 'signin-claude.cmd')
   try {
-    if (existsSync(wrapper)) spawn(`start "Sign in to Claude" /min "${wrapper}"`, { shell: true, windowsHide: false })
-    else spawn('start "Sign in to Claude" /min cmd /c claude auth login --claudeai', { shell: true, windowsHide: false })
+    // Explicit argv (NOT a shell:true string): from a hidden parent the shell-string form's
+    // quoting silently failed to launch anything. `start` opens a new minimized console; `cmd`
+    // hosts the wrapper so its console persists for the loopback flow. VM-verified.
+    const args = existsSync(wrapper)
+      ? ['/c', 'start', 'Sign in to Claude', '/min', wrapper]
+      : ['/c', 'start', 'Sign in to Claude', '/min', 'cmd', '/c', 'claude', 'auth', 'login', '--claudeai']
+    spawn('cmd.exe', args, { windowsHide: true, stdio: 'ignore' })
   } catch (e) {}
 }
 
