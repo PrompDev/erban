@@ -125,24 +125,18 @@ $port = $cfg.gateway.port
 $token = $cfg.gateway.auth.token
 if (-not $port) { throw "gateway.port missing in $cfgPath" }
 
-# 1b. Make sure the gateway is up. Normally it's already running (it starts at logon and
-# self-restarts), so this is a no-op and the window opens instantly. If it's down we kick
-# the service but DON'T block on it - opening the window is the priority; the Control UI
-# reconnects by itself the moment the gateway binds the port.
+# 1b. Make sure the gateway is up. We're user-launched now (no logon task), so if it's down we
+# start gateway.cmd DIRECTLY. We don't block on it - opening the window is the priority; the
+# Control UI reconnects by itself the moment the gateway binds the port.
+$gwCmd = if ($Root) { Join-Path $Root "profile\gateway.cmd" } else { $null }
 $up = [bool](Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
 if ($up) {
   T "gateway already up on :$port"
+} elseif ($gwCmd -and (Test-Path $gwCmd)) {
+  Start-Process -FilePath $gwCmd -WindowStyle Hidden | Out-Null
+  T "gateway was down; started gateway.cmd"
 } else {
-  # The Windows installer registers 'OpenClaw Business Gateway'; the dev/macOS layout used
-  # 'OpenClaw Gateway (erban)'. Kick whichever exists.
-  $gwTask = @("OpenClaw Business Gateway", "OpenClaw Gateway ($Profile)") |
-            Where-Object { Get-ScheduledTask -TaskName $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
-  if ($gwTask) {
-    Start-ScheduledTask -TaskName $gwTask
-    T "gateway was down; kicked '$gwTask' (UI reconnects when it binds)"
-  } else {
-    T "gateway down; no gateway task found"
-  }
+  T "gateway down; no gateway.cmd found (dev layout?)"
 }
 $base = "http://127.0.0.1:$port/"
 # erbanT0 (query) feeds the in-window debug badge; token stays in the hash where the app reads it.
@@ -310,3 +304,22 @@ try { if (Test-Path $provJson) { $activeProvider = (Get-Content -Raw $provJson |
   logFile        = $logFile
   userData       = $udd
 } | Format-List
+
+# close = closed. Stay alive (hidden) watching the box; when the user closes it, stop OpenClaw
+# entirely (gateway + identity helper) so nothing lingers in the background. Reopening from the
+# taskbar / Start menu / search relaunches everything. (The reuse path above returns early, so
+# only the first launcher monitors.)
+$boxAlive = { [bool](Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*Erban\chrome-surface*' }) }
+if (& $boxAlive) {
+  T "watching the box; close = stop OpenClaw"
+  while (& $boxAlive) { Start-Sleep -Seconds 3 }
+  T "box closed; stopping OpenClaw (gateway + identity helper)"
+  foreach ($p in @($port, $idPort)) {
+    try {
+      Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique |
+        ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+    } catch {}
+  }
+  T "OpenClaw stopped"
+}

@@ -20,7 +20,7 @@ $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 # Shown bottom-right of the installer window AND (kept in sync) on the first-run box, so the
 # running version is visible at a glance. Bump on every shipped build.
-$ErbanVersion = '2026-06-29.9 in-app-pty'
+$ErbanVersion = '2026-06-30.10 lifecycle'
 
 # Run elevated (create the folder, register auto-start, pre-authorise the firewall) -
 # one UAC, no mid-install failures. The .exe already requests admin; this covers the one-liner.
@@ -388,32 +388,46 @@ $engine = {
     if($gitBash){ $hoLines+="set `"CLAUDE_CODE_GIT_BASH_PATH=$gitBash`"" }
     $hoLines+=$hoExec
     $hoLines -join "`r`n" | Set-Content -Path $hoCmd -Encoding ascii
-    $wd=Join-Path $ctx.app 'erban-watchdog.ps1'
-    @('$ErrorActionPreference="SilentlyContinue"',"if(-not(Get-NetTCPConnection -LocalPort $gw -State Listen)){ Start-Process -FilePath `"$gwCmd`" -WindowStyle Hidden }","`$b=Get-CimInstance Win32_Process -Filter `"Name='chrome.exe' OR Name='msedge.exe'`" | Where-Object { `$_.CommandLine -like '*$($ctx.browser)*' }","if(-not `$b){ Start-ScheduledTask -TaskName 'OpenClaw Business Surface' }") -join "`r`n" | Set-Content -Path $wd -Encoding utf8
     try{ if(Get-NetFirewallRule -DisplayName 'OpenClaw Business (node)' -ErrorAction SilentlyContinue){ Log 'firewall rule already present' } else { New-NetFirewallRule -DisplayName 'OpenClaw Business (node)' -Direction Inbound -Program $node -Action Allow -Profile Any -ErrorAction Stop|Out-Null; Log 'firewall rule added' } }catch{ Log "firewall skipped: $($_.Exception.Message)" }
-    $me=$env:USERNAME
-    function RegTask($name,$action){ Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue; $pr=New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive -RunLevel Highest; $tr=New-ScheduledTaskTrigger -AtLogOn -User $me; Register-ScheduledTask -TaskName $name -Action $action -Principal $pr -Trigger $tr -Force|Out-Null }
-    try{ RegTask 'OpenClaw Business Gateway' (New-ScheduledTaskAction -Execute $gwCmd) }catch{ Log "gateway task skipped: $($_.Exception.Message)" }
-    $surfArg="-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$launcher`" -Root `"$($ctx.root)`" -NodePath `"$node`""
-    try{ RegTask 'OpenClaw Business Surface' (New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $surfArg) }catch{ Log "surface task skipped: $($_.Exception.Message)" }
-    # Context-handover supervisor (observe-only until ERBAN_HANDOVER_LIVE=1; see surface/handover-service/DESIGN.md).
-    try{ RegTask 'OpenClaw Business Handover' (New-ScheduledTaskAction -Execute $hoCmd) }catch{ Log "handover task skipped: $($_.Exception.Message)" }
-    try{ $wdAct=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wd`""; $wdTr=New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddMinutes(2)) -RepetitionInterval (New-TimeSpan -Minutes 2); $pr3=New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive -RunLevel Highest; Unregister-ScheduledTask -TaskName 'OpenClaw Business Watchdog' -Confirm:$false -ErrorAction SilentlyContinue; Register-ScheduledTask -TaskName 'OpenClaw Business Watchdog' -Action $wdAct -Principal $pr3 -Trigger $wdTr -Force|Out-Null }catch{}
+
+    # USER-LAUNCHED model: no scheduled tasks, no watchdog. The box opens from the Start Menu /
+    # taskbar / Windows search, and CLOSE = CLOSED (launch-surface stops the gateway when the box
+    # closes). A no-flash VBS launcher runs launch-surface hidden - a powershell shortcut/task
+    # flashes a blue console for an instant; WScript.Shell.Run(...,0) does not.
+    $vbs=Join-Path $ctx.app 'erban-open.vbs'
+    $psLaunch='powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+$launcher+'" -Root "'+$ctx.root+'" -NodePath "'+$node+'"'
+    @('Set sh = CreateObject("WScript.Shell")','sh.Run "'+($psLaunch -replace '"','""')+'", 0, False') -join "`r`n" | Set-Content -Path $vbs -Encoding ascii
+    Log "launcher written: $vbs"
+    # Start Menu entry -> Windows search finds "OpenClaw Business" and launches it; also the pin target.
+    try{
+      $icoSrc=Join-Path $ctx.app 'surface\control-ui\favicon.ico'
+      $ico=Join-Path $ctx.root 'erban.ico'; if(Test-Path $icoSrc){ try{ Copy-Item $icoSrc $ico -Force -ErrorAction SilentlyContinue }catch{} }
+      $progs=Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'; New-Item -ItemType Directory -Force $progs|Out-Null
+      $wsh=New-Object -ComObject WScript.Shell
+      $sc=$wsh.CreateShortcut((Join-Path $progs 'OpenClaw Business.lnk'))
+      $sc.TargetPath=Join-Path $env:SystemRoot 'System32\wscript.exe'
+      $sc.Arguments='"'+$vbs+'"'
+      $sc.WorkingDirectory=$ctx.app
+      if(Test-Path $ico){ $sc.IconLocation="$ico,0" } elseif(Test-Path $icoSrc){ $sc.IconLocation="$icoSrc,0" }
+      $sc.Description='OpenClaw Business'; $sc.Save()
+      Log 'Start Menu shortcut created (searchable + pinnable)'
+    }catch{ Log "shortcut skipped: $($_.Exception.Message)" }
+
+    # Start the gateway now so the post-install box connects instantly; on later launches
+    # launch-surface starts it, and stops it when the box is closed.
     Start-Process -FilePath $gwCmd -WindowStyle Hidden|Out-Null
     $gwUp=$false; for($i=0;$i -lt 40 -and -not $gwUp;$i++){ Start-Sleep -Milliseconds 800; if(Get-NetTCPConnection -LocalPort $gw -State Listen -ErrorAction SilentlyContinue){$gwUp=$true} }
     Log "gateway up=$gwUp on $gw"
 
     # 3 - open the assistant
-    # Fresh-bundle reset: we just re-extracted the app bundle on disk, but a re-install over a
-    # previous one can keep serving the OLD version - the identity service (port 8766) stays in
-    # memory with the old server.mjs/provider-auth.mjs, and the Chrome surface profile's service
-    # worker caches the old control-ui. Stop both so the surface task below starts the new bundle.
+    # Fresh-bundle reset: a re-install just replaced the bundle on disk, but a stale identity service
+    # (8766) and the Chrome surface service-worker cache can keep serving the OLD version. Clear both.
     try{ Get-NetTCPConnection -LocalPort 8766 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { try{ Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }catch{} } }catch{}
     try{ Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*Erban\chrome-surface*' } | ForEach-Object { try{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }catch{} } }catch{}
     try{ $surfCache=Join-Path $env:LOCALAPPDATA 'Erban\chrome-surface'; if(Test-Path $surfCache){ Remove-Item -Recurse -Force $surfCache -ErrorAction SilentlyContinue } }catch{}
     Log 'fresh-bundle reset: stopped old identity service + cleared surface cache'
     Step 3 'Opening your assistant...' 95
-    try{ Start-ScheduledTask -TaskName 'OpenClaw Business Surface' }catch{ Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$launcher`" -Root `"$($ctx.root)`" -NodePath `"$node`"" -WindowStyle Hidden|Out-Null }
+    Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wscript.exe') -ArgumentList ('"'+$vbs+'"') -WindowStyle Hidden|Out-Null
     Finish $true
   } catch { Finish $false $_.Exception.Message }
 }

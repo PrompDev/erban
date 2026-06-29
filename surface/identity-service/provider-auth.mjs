@@ -138,8 +138,9 @@ async function runClaudeFlow (p) {
       // Fire only once the whole url has landed (a newline / the paste-prompt follows it).
       if (m && (/paste code/i.test(clean) || /[\r\n]/.test(clean.slice(m.index + m[0].length)))) {
         urlSent = true
+        // claude already opens the browser itself; the box also shows the link (Open/Copy)
+        // as a fallback. We deliberately do NOT open a second window here.
         state = { provider: p.id, status: 'awaiting-code', step: 'authorize', error: null, url: m[0] }
-        openBrowser(m[0])
       }
     })
     term.onExit(async () => {
@@ -164,14 +165,6 @@ export function submitCode (codeRaw) {
     state = { ...state, status: 'signing-in', step: 'finishing' }
     return { ok: true }
   } catch (e) { return { ok: false, error: String(e && e.message || e) } }
-}
-
-// Open the OAuth url in the default browser (best-effort; the box also shows a copy-link).
-function openBrowser (url) {
-  try {
-    const u = String(url).replace(/'/g, "''")
-    spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', `Start-Process '${u}'`], { windowsHide: true, stdio: 'ignore' })
-  } catch (e) {}
 }
 
 // `claude auth status` exits 0 when the binary is signed in (independent of where creds live).
