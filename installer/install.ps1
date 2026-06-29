@@ -20,7 +20,7 @@ $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 # Shown bottom-right of the installer window AND (kept in sync) on the first-run box, so the
 # running version is visible at a glance. Bump on every shipped build.
-$ErbanVersion = '2026-06-30.10 lifecycle'
+$ErbanVersion = '2026-06-30.11 lifecycle'
 
 # Run elevated (create the folder, register auto-start, pre-authorise the firewall) -
 # one UAC, no mid-install failures. The .exe already requests admin; this covers the one-liner.
@@ -403,7 +403,10 @@ $engine = {
     # flashes a blue console for an instant; WScript.Shell.Run(...,0) does not.
     $vbs=Join-Path $ctx.app 'erban-open.vbs'
     $psLaunch='powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+$launcher+'" -Root "'+$ctx.root+'" -NodePath "'+$node+'"'
-    @('Set sh = CreateObject("WScript.Shell")','sh.Run "'+($psLaunch -replace '"','""')+'", 0, False') -join "`r`n" | Set-Content -Path $vbs -Encoding ascii
+    # Build the Run line as its OWN variable: inlining this concat inside @(...) makes PowerShell
+    # split it into 4 array elements (at the embedded quotes/comma), producing a broken multiline VBS.
+    $vbsRun='sh.Run "'+($psLaunch -replace '"','""')+'", 0, False'
+    @('Set sh = CreateObject("WScript.Shell")', $vbsRun) -join "`r`n" | Set-Content -Path $vbs -Encoding ascii
     Log "launcher written: $vbs"
     # Start Menu entry -> Windows search finds "OpenClaw Business" and launches it; also the pin target.
     try{
