@@ -12,7 +12,7 @@
   var currentName = null;
   // Bump on every shipped bundle. Shown on the first-run screen so we can confirm at a
   // glance which version a machine is actually running (rules out stale-cache confusion).
-  var BUILD = "2026-06-29.7 oauth-loopback";
+  var BUILD = "2026-06-29.8 in-app-pty";
   try { console.log("[erban] overlay build " + BUILD); } catch (e) {}
 
   // Capture the launch epoch (?erbanT0=) at script-load time, BEFORE the SPA router can
@@ -73,7 +73,7 @@
   function providerGet() { return call({ action: "provider-get" }); }
   function signinStart(provider) { return call({ action: "signin-start", provider: provider }); }
   function signinStatus() { return call({ action: "signin-status" }); }
-  function signinReopen() { return call({ action: "signin-reopen" }); }
+  function signinCode(code) { return call({ action: "signin-code", code: code }); }
 
   /* (4) Rename sweep: OpenClaw Control -> OpenClaw Business; bare Control -> Business. */
   function rebrand() {
@@ -136,7 +136,14 @@
         '<div class="erban-fr-or">Sign in to finish</div>' +
         '<div class="erban-fr-providers" id="erban-fr-providers"></div>' +
         '<div id="erban-fr-code" class="erban-fr-code" hidden>' +
-          '<button id="erban-fr-reopen" class="erban-fr-reopen" type="button">Open the sign-in window again</button>' +
+          '<div class="erban-fr-codehint">A browser opened for you to approve. If it didn’t:</div>' +
+          '<div class="erban-fr-coderow">' +
+            '<button id="erban-fr-openlink" class="erban-fr-reopen" type="button">Open sign-in page</button>' +
+            '<button id="erban-fr-copylink" class="erban-fr-reopen" type="button">Copy link</button>' +
+          '</div>' +
+          '<div class="erban-fr-codehint">If it gives you a code, paste it here:</div>' +
+          '<input id="erban-fr-codeinput" class="erban-fr-input" type="password" autocomplete="off" placeholder="Paste code (hidden)" />' +
+          '<button id="erban-fr-codego" class="erban-fr-btn" type="button">Finish sign-in</button>' +
         '</div>' +
         '<button id="erban-fr-go" class="erban-fr-btn" hidden>Start</button>' +
         '<p id="erban-fr-status" class="erban-fr-status"></p>' +
@@ -148,7 +155,10 @@
     var go = ov.querySelector("#erban-fr-go");
     var status = ov.querySelector("#erban-fr-status");
     var codeBox = ov.querySelector("#erban-fr-code");
-    var reopenBtn = ov.querySelector("#erban-fr-reopen");
+    var openLinkBtn = ov.querySelector("#erban-fr-openlink");
+    var copyLinkBtn = ov.querySelector("#erban-fr-copylink");
+    var codeInput = ov.querySelector("#erban-fr-codeinput");
+    var codeGo = ov.querySelector("#erban-fr-codego");
     setTimeout(function () { try { input.focus(); } catch (e) {} }, 60);
     var busy = false;
 
@@ -200,19 +210,17 @@
       });
     }
 
-    function showReopen() {
-      if (codeBox.hidden) codeBox.hidden = false;
-    }
-    function hideReopen() { codeBox.hidden = true; }
+    var signinUrl = "";
+    function hideCode() { codeBox.hidden = true; }
 
     function pollSignin(provider, btn) {
-      var tries = 0, reopenWired = false;
+      var tries = 0, codeWired = false;
       var iv = setInterval(function () {
         tries++;
         signinStatus().then(function (s) {
           if (!s) return; // transient ws miss; keep polling
           if (s.status === "ready") {
-            clearInterval(iv); hideReopen();
+            clearInterval(iv); hideCode();
             btn.classList.remove("is-working"); btn.classList.add("is-done");
             var lbl = btn.querySelector(".erban-fr-prov-label");
             if (lbl) lbl.textContent = "Signed in with " + (PROVIDER_LABELS[provider] || provider);
@@ -220,21 +228,37 @@
             setStatus("Signed in. You're ready.");
             go.hidden = false; try { go.focus(); } catch (e) {}
           } else if (s.status === "error" || s.status === "unsupported") {
-            clearInterval(iv); hideReopen(); failSignin(btn, s.error || "Sign-in failed.");
-          } else if (s.status === "awaiting-terminal") {
-            // Loopback OAuth: the browser opened — the user just clicks Approve and it
-            // finishes on its own. We keep polling until the credential lands.
+            clearInterval(iv); hideCode(); failSignin(btn, s.error || "Sign-in failed.");
+          } else if (s.status === "awaiting-code") {
+            // The browser opened to approve. If approving completes it (loopback) the box
+            // goes green on its own; otherwise the user pastes the code shown into the box.
             tries = 0; // pause the timeout clock while we wait on the human
-            showReopen();
-            setStatus("Click Approve in your browser to finish — this completes on its own.");
-            if (!reopenWired) {
-              reopenWired = true;
-              reopenBtn.addEventListener("click", function () { signinReopen(); setStatus("Reopened the sign-in — check your browser."); });
+            if (s.url) signinUrl = s.url;
+            if (codeBox.hidden) { codeBox.hidden = false; }
+            setStatus("Approve in your browser. If it shows a code, paste it below.");
+            if (!codeWired) {
+              codeWired = true;
+              openLinkBtn.addEventListener("click", function () { if (signinUrl) window.open(signinUrl, "_blank"); });
+              copyLinkBtn.addEventListener("click", function () {
+                if (!signinUrl) return;
+                try { navigator.clipboard.writeText(signinUrl); copyLinkBtn.textContent = "Copied"; setTimeout(function(){ copyLinkBtn.textContent = "Copy link"; }, 1500); } catch (e) {}
+              });
+              var submitCodeFn = function () {
+                var code = (codeInput.value || "").trim();
+                if (!code) { try { codeInput.focus(); } catch (e) {} return; }
+                codeGo.disabled = true; codeInput.disabled = true;
+                setStatus("Finishing sign-in…");
+                signinCode(code).then(function (r) {
+                  if (!r || !r.ok) { codeGo.disabled = false; codeInput.disabled = false; setStatus((r && r.error) || "That code didn't work — try again."); }
+                });
+              };
+              codeGo.addEventListener("click", submitCodeFn);
+              codeInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); submitCodeFn(); } });
             }
           } else if (s.step) {
             setStatus("Signing in… (" + s.step + ")");
           }
-          if (tries > 240) { clearInterval(iv); hideReopen(); failSignin(btn, "Sign-in timed out."); }
+          if (tries > 240) { clearInterval(iv); hideCode(); failSignin(btn, "Sign-in timed out."); }
         });
       }, 1500);
     }

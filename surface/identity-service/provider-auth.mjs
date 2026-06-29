@@ -80,58 +80,80 @@ async function runFlow (p) {
   throw new Error('provider not implemented: ' + p.id)
 }
 
-// One-click sign-in. `claude auth login --claudeai` uses the OAuth LOOPBACK flow: it
-// auto-opens the browser and, on Approve, the redirect returns to a localhost listener
-// that completes auth on its own (no code to copy - unlike `setup-token`). It needs a
-// real console for a TTY (piped stdio emits nothing), so we launch a minimized console
-// and poll `auth status` until the credential lands in the shared store, surfacing
-// 'awaiting-terminal' so the box can say "approve in your browser".
+// Fully in-app sign-in, no console window. `claude auth login --claudeai` needs a TTY
+// (piped stdio emits nothing), so we run it through a HIDDEN ConPTY (vendored node-pty).
+// We capture the OAuth URL from its output and surface it to the box ('awaiting-code'),
+// open the browser, and then either: the user just clicks Approve and the loopback
+// auto-completes (no code), OR they paste the code into the box and we write it to the
+// PTY. claude persists the credential to the shared CLAUDE_CONFIG_DIR store the gateway
+// reads. node-pty is dynamic-imported so a native-load failure can't take down naming.
+const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+let signinTerm = null
+const readyState = (p) => ({ provider: p.id, status: 'ready', step: 'done', error: null, url: null })
+
 async function runClaudeFlow (p) {
   state = { provider: p.id, status: 'signing-in', step: 'auth', error: null, url: null }
-  if (await claudeIsAuthed()) {
-    persistProvider(p.id)
-    state = { provider: p.id, status: 'ready', step: 'done', error: null, url: null }
-    return
-  }
-  openSigninTerminal()
-  state = { provider: p.id, status: 'awaiting-terminal', step: 'authorize', error: null, url: null }
-  const ok = await pollAuthed(900000)
-  if (!ok) throw new Error('Sign-in did not finish. Complete it in the sign-in window, then click Sign in with Claude again.')
+  if (await claudeIsAuthed()) { persistProvider(p.id); state = readyState(p); return }
+  let ptyMod
+  try { ptyMod = (await import('./vendor/node-pty/lib/index.js')).default }
+  catch (e) { throw new Error('sign-in component failed to load: ' + (e && e.message || e)) }
+  await new Promise((resolve, reject) => {
+    let out = '', urlSent = false, settled = false, poll = null, timer = null, term
+    try {
+      term = ptyMod.spawn('cmd.exe', ['/c', 'claude', 'auth', 'login', '--claudeai'],
+        { name: 'xterm-color', cols: 120, rows: 40, cwd: HOME, env: process.env })
+    } catch (e) { return reject(new Error('could not start sign-in: ' + (e && e.message || e))) }
+    signinTerm = term
+    const settle = (fn, arg) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer); clearInterval(poll)
+      try { term.kill() } catch (e) {}
+      signinTerm = null
+      fn(arg)
+    }
+    term.onData((d) => {
+      out += d
+      if (urlSent) return
+      const clean = stripAnsi(out)
+      const m = clean.match(/https?:\/\/\S*oauth\/authorize\S*/i)
+      // Fire only once the whole url has landed (a newline / the paste-prompt follows it).
+      if (m && (/paste code/i.test(clean) || /[\r\n]/.test(clean.slice(m.index + m[0].length)))) {
+        urlSent = true
+        state = { provider: p.id, status: 'awaiting-code', step: 'authorize', error: null, url: m[0] }
+        openBrowser(m[0])
+      }
+    })
+    term.onExit(async () => {
+      if (await claudeIsAuthed()) settle(resolve)
+      else settle(reject, new Error('Sign-in did not complete. Open the link, approve, then paste the code.'))
+    })
+    // Loopback path: approving in the browser can complete it with no code to paste.
+    poll = setInterval(async () => { if (!settled && await claudeIsAuthed()) settle(resolve) }, 3000)
+    timer = setTimeout(() => settle(reject, new Error('Sign-in timed out.')), 900000)
+  })
   persistProvider(p.id)
-  state = { provider: p.id, status: 'ready', step: 'done', error: null, url: null }
+  state = readyState(p)
 }
 
-// Launch the sign-in console (minimized - the user only interacts with the browser).
-// The console gives claude a real TTY so it can open the browser + run the loopback
-// listener (piped stdio yields nothing). The shipped wrapper runs `auth login` and uses
-// the claude.cmd shim (avoids the PowerShell execution-policy block on claude.ps1).
-function openSigninTerminal () {
-  const wrapper = join(dirname(fileURLToPath(import.meta.url)), 'signin-claude.cmd')
+// Write the user's pasted code into the live PTY to finish the paste flow.
+export function submitCode (codeRaw) {
+  const code = String(codeRaw || '').trim()
+  if (!signinTerm) return { ok: false, error: 'no sign-in is in progress' }
+  if (!code) return { ok: false, error: 'code required' }
   try {
-    // Explicit argv (NOT a shell:true string): from a hidden parent the shell-string form's
-    // quoting silently failed to launch anything. `start` opens a new minimized console; `cmd`
-    // hosts the wrapper so its console persists for the loopback flow. VM-verified.
-    const args = existsSync(wrapper)
-      ? ['/c', 'start', 'Sign in to Claude', '/min', wrapper]
-      : ['/c', 'start', 'Sign in to Claude', '/min', 'cmd', '/c', 'claude', 'auth', 'login', '--claudeai']
-    spawn('cmd.exe', args, { windowsHide: true, stdio: 'ignore' })
+    signinTerm.write(code + '\r')
+    state = { ...state, status: 'signing-in', step: 'finishing' }
+    return { ok: true }
+  } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+}
+
+// Open the OAuth url in the default browser (best-effort; the box also shows a copy-link).
+function openBrowser (url) {
+  try {
+    const u = String(url).replace(/'/g, "''")
+    spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', `Start-Process '${u}'`], { windowsHide: true, stdio: 'ignore' })
   } catch (e) {}
-}
-
-// Re-open the sign-in console (the user may have closed it). Only while a flow is live.
-export function reopenSignin () {
-  if (state.status === 'awaiting-terminal' || state.status === 'signing-in') { openSigninTerminal(); return { ok: true } }
-  return { ok: false, error: 'no sign-in in progress' }
-}
-
-// Poll `claude auth status` until the user finishes in the console window (or we time out).
-async function pollAuthed (timeoutMs) {
-  const t0 = Date.now()
-  while (Date.now() - t0 < timeoutMs) {
-    await new Promise((r) => setTimeout(r, 3000))
-    if (await claudeIsAuthed()) return true
-  }
-  return false
 }
 
 // `claude auth status` exits 0 when the binary is signed in (independent of where creds live).
