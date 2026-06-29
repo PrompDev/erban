@@ -48,12 +48,14 @@ it's up to as it goes.
 
 ![The erban installer setting up OpenClaw](site/installer.png)
 
-### 3. Pinned to your taskbar
+### 3. Open and close it like any app
 
-OpenClaw installs with its **own icon on your taskbar**. Close the window and OpenClaw closes with it —
-but the icon stays pinned, so your agent is **one click away any time** you want it.
+OpenClaw Business gets a **Desktop shortcut** and a **Start Menu entry** (search "OpenClaw" and it's
+there) with its own logo. Open it from either; **close the window and OpenClaw fully stops** — opening
+a shortcut again brings it right back, in about 12 seconds. Right-click → **Pin to taskbar** if you want
+it one click away (Windows doesn't let an app pin itself).
 
-![The OpenClaw icon pinned to the Windows taskbar](site/taskbar.png)
+![The OpenClaw icon on the Windows taskbar](site/taskbar.png)
 
 ### 4. Your agent, in the corner
 
@@ -83,13 +85,16 @@ again. It's always right where you left it.
 `ui`):
 
 1. Opens a friendly progress window instantly (it's embedded, no download needed).
-2. Installs **Node**, then **OpenClaw** (`npm i -g openclaw`), then **Chrome** (so the corner box
-   shows OpenClaw's own taskbar icon), then the **Claude engine**.
+2. Installs **Node**, then **OpenClaw** (`npm i -g openclaw`), **Chrome** (so the corner box
+   shows OpenClaw's own logo), **Git for Windows** (the Claude engine needs a bash), then the
+   **Claude engine**.
 3. Downloads the app bundle (`erban.xyz/erban-assets.zip` — a zip of this repo's `surface/` +
    `agent/`).
-4. Writes the OpenClaw config + gateway launcher, registers the **gateway / surface / watchdog**
-   scheduled tasks and a firewall rule.
+4. Writes the OpenClaw config + gateway launcher, builds the logo icon, adds a firewall rule, and
+   creates the **Desktop + Start Menu shortcuts** (no scheduled tasks — it's user-launched).
 5. Names your assistant and opens the corner chat box.
+
+See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 The installed agent is plain OpenClaw — named, set up, ready to chat.
 

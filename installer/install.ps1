@@ -20,7 +20,7 @@ $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 # Shown bottom-right of the installer window AND (kept in sync) on the first-run box, so the
 # running version is visible at a glance. Bump on every shipped build.
-$ErbanVersion = '2026-06-30.15 agent-login'
+$ErbanVersion = '2026-06-30.16 launch+shortcuts'
 
 # Run elevated (create the folder, register auto-start, pre-authorise the firewall) -
 # one UAC, no mid-install failures. The .exe already requests admin; this covers the one-liner.
@@ -435,20 +435,23 @@ $engine = {
     $vbsRun='sh.Run "'+($psLaunch -replace '"','""')+'", 0, False'
     @('Set sh = CreateObject("WScript.Shell")', $vbsRun) -join "`r`n" | Set-Content -Path $vbs -Encoding ascii
     Log "launcher written: $vbs"
-    # Start Menu entry -> Windows search finds "OpenClaw Business" and launches it; also the pin target.
+    # Shortcuts named "OpenClaw Business": Start Menu (so Windows search finds it as an app + pin
+    # target) AND Desktop (the obvious one-click open). Closing the box stops everything; clicking
+    # either shortcut reopens it. Same OpenClaw-logo .ico the box uses, for one consistent logo.
     try{
-      # Use the same OpenClaw-logo .ico the box uses (built above), so the shortcut/pin and the
-      # box window show one consistent logo. Fall back to the bundled favicon.ico.
       $icoForLnk=if(Test-Path $boxIco){ $boxIco } else { Join-Path $ctx.app 'surface\control-ui\favicon.ico' }
       $progs=Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'; New-Item -ItemType Directory -Force $progs|Out-Null
+      $desktop=[Environment]::GetFolderPath('Desktop')
       $wsh=New-Object -ComObject WScript.Shell
-      $sc=$wsh.CreateShortcut((Join-Path $progs 'OpenClaw Business.lnk'))
-      $sc.TargetPath=Join-Path $env:SystemRoot 'System32\wscript.exe'
-      $sc.Arguments='"'+$vbs+'"'
-      $sc.WorkingDirectory=$ctx.app
-      if(Test-Path $icoForLnk){ $sc.IconLocation="$icoForLnk,0" }
-      $sc.Description='OpenClaw Business'; $sc.Save()
-      Log 'Start Menu shortcut created (searchable + pinnable)'
+      foreach($lnkPath in @((Join-Path $progs 'OpenClaw Business.lnk'), (Join-Path $desktop 'OpenClaw Business.lnk'))){
+        $sc=$wsh.CreateShortcut($lnkPath)
+        $sc.TargetPath=Join-Path $env:SystemRoot 'System32\wscript.exe'
+        $sc.Arguments='"'+$vbs+'"'
+        $sc.WorkingDirectory=$ctx.app
+        if(Test-Path $icoForLnk){ $sc.IconLocation="$icoForLnk,0" }
+        $sc.Description='OpenClaw Business'; $sc.Save()
+      }
+      Log 'shortcuts created: Start Menu (searchable) + Desktop (open)'
     }catch{ Log "shortcut skipped: $($_.Exception.Message)" }
 
     # The gateway is started by launch-surface (the post-install open below, and every later

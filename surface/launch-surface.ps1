@@ -126,15 +126,21 @@ $token = $cfg.gateway.auth.token
 if (-not $port) { throw "gateway.port missing in $cfgPath" }
 
 # 1b. Make sure the gateway is up. We're user-launched now (no logon task), so if it's down we
-# start gateway.cmd DIRECTLY. We don't block on it - opening the window is the priority; the
-# Control UI reconnects by itself the moment the gateway binds the port.
+# start gateway.cmd DIRECTLY, then WAIT for it to bind the port before opening the box - Chrome
+# --app does NOT auto-retry a refused connection, so opening too early shows "site can't be
+# reached" and never recovers.
 $gwCmd = if ($Root) { Join-Path $Root "profile\gateway.cmd" } else { $null }
 $up = [bool](Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
 if ($up) {
   T "gateway already up on :$port"
 } elseif ($gwCmd -and (Test-Path $gwCmd)) {
   Start-Process -FilePath $gwCmd -WindowStyle Hidden | Out-Null
-  T "gateway was down; started gateway.cmd"
+  T "gateway was down; started gateway.cmd - waiting for it to bind :$port"
+  for ($gi = 0; $gi -lt 60 -and -not $up; $gi++) {
+    Start-Sleep -Milliseconds 400
+    $up = [bool](Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
+  }
+  T "gateway bound=$up after $($sw.ElapsedMilliseconds)ms"
 } else {
   T "gateway down; no gateway.cmd found (dev layout?)"
 }
