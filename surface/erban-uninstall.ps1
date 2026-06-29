@@ -27,7 +27,7 @@ function Remove-File($p) { if (Test-Path $p) { Step "remove file $p"; if (-not $
 
 # The self-contained Windows installer registers 'OpenClaw Business *'; the older dev/macOS
 # layout used 'OpenClaw Gateway (erban)'. Remove whichever are present.
-$tasks = @("OpenClaw Business Gateway", "OpenClaw Business Surface", "OpenClaw Business Watchdog", "OpenClaw Gateway (erban)")
+$tasks = @("OpenClaw Business Gateway", "OpenClaw Business Surface", "OpenClaw Business Watchdog", "OpenClaw Business Handover", "OpenClaw Gateway (erban)")
 $port = 18901
 $idPort = 8766
 
@@ -66,6 +66,8 @@ if (Get-NetFirewallRule -DisplayName 'OpenClaw Business (node)' -ErrorAction Sil
 if ($AppDir) {
   $ws = Join-Path $AppDir "agent\workspace"
   Remove-File (Join-Path $ws "erban-provider.json")
+  # Canonical config store (name + provider) lives in SQLite now; clear it + WAL sidecars.
+  if (-not $dry) { Get-ChildItem -Path $ws -Filter "erban-config.db*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue }
   if (Test-Path (Join-Path $ws "erban-identity.json")) { Step "reset name marker"; if (-not $dry) { Set-Content -Path (Join-Path $ws "erban-identity.json") -Encoding utf8 -Value '{ "name": null }' } }
 }
 

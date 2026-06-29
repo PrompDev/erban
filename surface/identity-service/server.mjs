@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startSignin, getState as getSigninState, getActiveProvider, listProviders } from './provider-auth.mjs'
+import { openStore } from './db.mjs'
 
 const PORT = Number(process.env.ERBAN_IDENTITY_PORT || 8766)
 const HOST = '127.0.0.1'
@@ -27,8 +28,13 @@ const HOST = '127.0.0.1'
 const WORKSPACE = process.env.ERBAN_WORKSPACE || join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'agent', 'workspace')
 const NAME_JSON = join(WORKSPACE, 'erban-identity.json')
 const IDENTITY_MD = join(WORKSPACE, 'IDENTITY.md')
+// Canonical config store (SQLite, or JSON fallback). The agent name lives here;
+// we mirror it to NAME_JSON + IDENTITY.md below for the launcher and the prompt.
+const store = openStore(WORKSPACE)
 
 function readName () {
+  try { const n = store.getName(); if (n) return n } catch (e) {}
+  // Belt-and-braces: read the legacy JSON directly if the store missed it.
   try { if (existsSync(NAME_JSON)) { const j = JSON.parse(readFileSync(NAME_JSON, 'utf8')); if (j && typeof j.name === 'string' && j.name.trim()) return j.name.trim() } } catch (e) {}
   return null
 }
@@ -56,8 +62,15 @@ becomes your identity and you should refer to yourself by it from then on.
 `
 }
 function persist (name) {
-  writeFileSync(NAME_JSON, JSON.stringify({ name: name || null, updatedAt: new Date().toISOString() }, null, 2))
-  writeFileSync(IDENTITY_MD, name ? identityWithName(name) : identityEmpty())
+  const clean = name && String(name).trim() ? String(name).trim() : null
+  try { store.setName(clean) } catch (e) {}                       // canonical (SQLite)
+  // Mirror to the legacy JSON the PowerShell launcher reads before launch.
+  // (When the store is JSON-backed it already wrote this file, so skip the dup.)
+  if (store.backend !== 'json') {
+    try { writeFileSync(NAME_JSON, JSON.stringify({ name: clean, updatedAt: new Date().toISOString() }, null, 2)) } catch (e) {}
+  }
+  // Render IDENTITY.md (OpenClaw injects this into the agent's system prompt).
+  writeFileSync(IDENTITY_MD, clean ? identityWithName(clean) : identityEmpty())
 }
 
 function handle (payload, reply) {

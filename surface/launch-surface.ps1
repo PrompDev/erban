@@ -57,6 +57,10 @@ $wsDir = if ($Root -and (Test-Path (Join-Path $Root "app\agent\workspace"))) { J
 # Hand the workspace to every node child we spawn (the identity helper + provider-auth),
 # so they write the name/provider HERE and not their hardcoded dev fallback path.
 $env:ERBAN_WORKSPACE = $wsDir
+# Self-contained Claude config home (matches the gateway's CLAUDE_CONFIG_DIR), so the
+# one-click sign-in (provider-auth.mjs -> `claude setup-token`) writes the login where
+# the gateway reads it. Only in an installed layout; dev runs use the default ~/.claude.
+if ($Root) { $env:CLAUDE_CONFIG_DIR = Join-Path $Root "claude" }
 $idJson = Join-Path $wsDir "erban-identity.json"
 $idMd   = Join-Path $wsDir "IDENTITY.md"
 # Active model-provider marker, written by the first-run sign-in (provider-auth.mjs).
@@ -84,6 +88,11 @@ if ($Reset) {
     ) -join "`n"
     Set-Content -Path $idMd -Encoding utf8 -Value $emptyMd
     Remove-Item -Path $provJson -Force -ErrorAction SilentlyContinue
+    # Clear the canonical SQLite store too (name + provider live here now), incl.
+    # its WAL sidecars, so reset really starts over and the DB can't resurrect the
+    # old name. The identity helper recreates an empty db.mjs store on next launch.
+    Get-ChildItem -Path $wsDir -Filter "erban-config.db*" -ErrorAction SilentlyContinue |
+      Remove-Item -Force -ErrorAction SilentlyContinue
   }
   Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -like '*Erban\chrome-surface*' } |

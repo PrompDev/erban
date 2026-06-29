@@ -16,12 +16,15 @@ import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
+import { openStore } from './db.mjs'
 
 const HOME = process.env.USERPROFILE || homedir()
 // Same workspace resolution as server.mjs: ERBAN_WORKSPACE, else the bundle's own layout.
 const WORKSPACE = process.env.ERBAN_WORKSPACE || join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'agent', 'workspace')
 const PROVIDER_JSON = join(WORKSPACE, 'erban-provider.json')
 const CLAUDE_BIN = process.env.ERBAN_CLAUDE_BIN || 'claude'
+// Same canonical store as the identity helper (shared handle, see db.mjs).
+const store = openStore(WORKSPACE)
 
 // --- provider registry -------------------------------------------------------
 const PROVIDERS = {
@@ -48,6 +51,8 @@ export function listProviders () {
 }
 
 export function getActiveProvider () {
+  try { const p = store.getProvider(); if (p) return p } catch (e) {}
+  // Belt-and-braces: read the legacy JSON directly if the store missed it.
   try {
     if (existsSync(PROVIDER_JSON)) {
       const j = JSON.parse(readFileSync(PROVIDER_JSON, 'utf8'))
@@ -95,7 +100,11 @@ async function claudeIsAuthed () {
 }
 
 function persistProvider (provider) {
-  writeFileSync(PROVIDER_JSON, JSON.stringify({ provider, updatedAt: new Date().toISOString() }, null, 2))
+  try { store.setProvider(provider) } catch (e) {}                // canonical (SQLite)
+  // Mirror to the legacy JSON the launcher reads (skip if the store IS that JSON).
+  if (store.backend !== 'json') {
+    try { writeFileSync(PROVIDER_JSON, JSON.stringify({ provider, updatedAt: new Date().toISOString() }, null, 2)) } catch (e) {}
+  }
 }
 
 // --- tiny process runner -----------------------------------------------------

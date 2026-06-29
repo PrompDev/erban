@@ -20,10 +20,11 @@ and a watchdog.
 ## Components
 
 ### 1. Installer (`installer/install.ps1`, `install.sh`)
-Self-elevates (one UAC), creates `C:\OpenClawBusiness\` (`app`, `profile`, `browser`, `logs`, `ui`),
-installs the essentials, downloads `erban-assets.zip`, writes `openclaw.json` + a gateway launcher,
-registers the gateway / surface / watchdog scheduled tasks and a firewall rule, and opens the corner
-box. Every external step is timed out so a hung sub-installer can't wedge the run. The progress UI is
+Self-elevates (one UAC), creates `C:\OpenClawBusiness\` (`app`, `profile`, `browser`, `logs`, `ui`,
+`claude`), installs the essentials, downloads `erban-assets.zip`, writes `openclaw.json` + a gateway
+launcher, registers the gateway / surface / watchdog / handover scheduled tasks and a firewall rule, and
+opens the corner box. The agent's Claude config (settings/hooks/transcripts/login) is kept self-contained
+in `<root>\claude` via `CLAUDE_CONFIG_DIR`, not the user's global `~/.claude`. Every external step is timed out so a hung sub-installer can't wedge the run. The progress UI is
 served from a tiny local HTTP listener and polls `/status`.
 
 ### 2. Local gateway (OpenClaw)
@@ -44,6 +45,14 @@ first-run screen and writes it as the server-side source of truth (`erban-identi
 ### 5. Watchdog
 A scheduled task that restarts the gateway or the corner window if either dies — deterministic
 relaunch, no model in the loop.
+
+### 6. Context handover (`surface/handover-service/`)
+A deterministic supervisor (scheduled task, like the watchdog) that watches the agent's context fill
+via OpenClaw's usage and, at a model-aware threshold (~96% of the model's window — 960K for Opus 4.8's
+1M), writes a durable handover document to erban's SQLite and forces a fresh session. A Claude Code
+`SessionStart` hook (installed in the self-contained `<root>\claude`) injects that document so the new
+agent picks up automatically. Observe-only until verified on a live install — see
+`surface/handover-service/DESIGN.md`.
 
 ## Hosting + distribution
 

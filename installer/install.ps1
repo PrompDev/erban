@@ -39,7 +39,10 @@ function Initialize-Root([string]$root) {
 try { Initialize-Root $InstallRoot } catch { $InstallRoot = Join-Path $env:USERPROFILE 'OpenClaw Business'; Initialize-Root $InstallRoot; $rootFellBack = $true }
 $AppDir=Join-Path $InstallRoot 'app'; $ProfileDir=Join-Path $InstallRoot 'profile'
 $BrowserDir=Join-Path $InstallRoot 'browser'; $LogDir=Join-Path $InstallRoot 'logs'; $UiDir=Join-Path $InstallRoot 'ui'
-New-Item -ItemType Directory -Force -Path $AppDir,$ProfileDir,$BrowserDir,$LogDir,$UiDir | Out-Null
+# Self-contained Claude config home (settings/hooks/transcripts/login) - persistent,
+# NOT under app/ (which is wiped on every reinstall), so the user's sign-in survives.
+$ClaudeDir=Join-Path $InstallRoot 'claude'
+New-Item -ItemType Directory -Force -Path $AppDir,$ProfileDir,$BrowserDir,$LogDir,$UiDir,$ClaudeDir | Out-Null
 $Log = Join-Path $LogDir 'install.log'
 "=== install $([DateTime]::Now.ToString('s')) root=$InstallRoot demo=$($Demo.IsPresent) ===" | Set-Content -Path $Log -Encoding utf8
 
@@ -337,7 +340,18 @@ $engine = {
     $cfg|ConvertTo-Json -Depth 12|Set-Content (Join-Path $ctx.profile 'openclaw.json') -Encoding utf8
     $gwCmd=Join-Path $ctx.profile 'gateway.cmd'
     $gwExec= if($ocIndex){ "`"$node`" `"$ocIndex`" gateway --port $gw" } else { "`"$($oc.Source)`" gateway --port $gw" }
-    @('@echo off',"set `"HOME=$env:USERPROFILE`"","set `"OPENCLAW_STATE_DIR=$($ctx.profile)`"","set `"OPENCLAW_CONFIG_PATH=$($ctx.profile)\openclaw.json`"",'set "OPENCLAW_PROFILE=erban"',"set `"OPENCLAW_GATEWAY_PORT=$gw`"","set `"ERBAN_WORKSPACE=$workspace`"",$gwExec) -join "`r`n" | Set-Content -Path $gwCmd -Encoding ascii
+    @('@echo off',"set `"HOME=$env:USERPROFILE`"","set `"CLAUDE_CONFIG_DIR=$($ctx.claude)`"","set `"OPENCLAW_STATE_DIR=$($ctx.profile)`"","set `"OPENCLAW_CONFIG_PATH=$($ctx.profile)\openclaw.json`"",'set "OPENCLAW_PROFILE=erban"',"set `"OPENCLAW_GATEWAY_PORT=$gw`"","set `"ERBAN_WORKSPACE=$workspace`"",$gwExec) -join "`r`n" | Set-Content -Path $gwCmd -Encoding ascii
+    # Self-contained Claude config: register the handover SessionStart hook in the
+    # erban-local Claude home, so a freshly-rotated agent picks up the last handover
+    # doc. CLAUDE_CONFIG_DIR (set above + in launch-surface + the wrapper below) keeps
+    # the gateway, the sign-in, and the supervisor all pointed at the same Claude home.
+    $hookScript=Join-Path $ctx.app 'surface\handover-service\session-start-hook.mjs'
+    $claudeSettings=[ordered]@{ hooks=[ordered]@{ SessionStart=@( [ordered]@{ hooks=@( [ordered]@{ type='command'; command="`"$node`" `"$hookScript`"" } ) } ) } }
+    $claudeSettings|ConvertTo-Json -Depth 8|Set-Content (Join-Path $ctx.claude 'settings.json') -Encoding utf8
+    # Context-handover supervisor wrapper (same Claude home + workspace as the gateway).
+    $hoCmd=Join-Path $ctx.profile 'erban-handover.cmd'
+    $hoExec="`"$node`" `"$(Join-Path $ctx.app 'surface\handover-service\supervisor.mjs')`""
+    @('@echo off',"set `"HOME=$env:USERPROFILE`"","set `"CLAUDE_CONFIG_DIR=$($ctx.claude)`"","set `"OPENCLAW_STATE_DIR=$($ctx.profile)`"","set `"OPENCLAW_CONFIG_PATH=$($ctx.profile)\openclaw.json`"","set `"ERBAN_WORKSPACE=$workspace`"",$hoExec) -join "`r`n" | Set-Content -Path $hoCmd -Encoding ascii
     $wd=Join-Path $ctx.app 'erban-watchdog.ps1'
     @('$ErrorActionPreference="SilentlyContinue"',"if(-not(Get-NetTCPConnection -LocalPort $gw -State Listen)){ Start-Process -FilePath `"$gwCmd`" -WindowStyle Hidden }","`$b=Get-CimInstance Win32_Process -Filter `"Name='chrome.exe' OR Name='msedge.exe'`" | Where-Object { `$_.CommandLine -like '*$($ctx.browser)*' }","if(-not `$b){ Start-ScheduledTask -TaskName 'OpenClaw Business Surface' }") -join "`r`n" | Set-Content -Path $wd -Encoding utf8
     try{ if(Get-NetFirewallRule -DisplayName 'OpenClaw Business (node)' -ErrorAction SilentlyContinue){ Log 'firewall rule already present' } else { New-NetFirewallRule -DisplayName 'OpenClaw Business (node)' -Direction Inbound -Program $node -Action Allow -Profile Any -ErrorAction Stop|Out-Null; Log 'firewall rule added' } }catch{ Log "firewall skipped: $($_.Exception.Message)" }
@@ -346,6 +360,8 @@ $engine = {
     try{ RegTask 'OpenClaw Business Gateway' (New-ScheduledTaskAction -Execute $gwCmd) }catch{ Log "gateway task skipped: $($_.Exception.Message)" }
     $surfArg="-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$launcher`" -Root `"$($ctx.root)`" -NodePath `"$node`""
     try{ RegTask 'OpenClaw Business Surface' (New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $surfArg) }catch{ Log "surface task skipped: $($_.Exception.Message)" }
+    # Context-handover supervisor (observe-only until ERBAN_HANDOVER_LIVE=1; see surface/handover-service/DESIGN.md).
+    try{ RegTask 'OpenClaw Business Handover' (New-ScheduledTaskAction -Execute $hoCmd) }catch{ Log "handover task skipped: $($_.Exception.Message)" }
     try{ $wdAct=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wd`""; $wdTr=New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddMinutes(2)) -RepetitionInterval (New-TimeSpan -Minutes 2); $pr3=New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive -RunLevel Highest; Unregister-ScheduledTask -TaskName 'OpenClaw Business Watchdog' -Confirm:$false -ErrorAction SilentlyContinue; Register-ScheduledTask -TaskName 'OpenClaw Business Watchdog' -Action $wdAct -Principal $pr3 -Trigger $wdTr -Force|Out-Null }catch{}
     Start-Process -FilePath $gwCmd -WindowStyle Hidden|Out-Null
     $gwUp=$false; for($i=0;$i -lt 40 -and -not $gwUp;$i++){ Start-Sleep -Milliseconds 800; if(Get-NetTCPConnection -LocalPort $gw -State Listen -ErrorAction SilentlyContinue){$gwUp=$true} }
@@ -372,7 +388,7 @@ if (-not $NoUi) {
 }
 
 # start the engine (runs while the window comes up)
-$ctx=@{ state=$state; root=$InstallRoot; app=$AppDir; profile=$ProfileDir; browser=$BrowserDir; logs=$LogDir; ui=$UiDir; base=$Base; log=$Log; demo=$Demo.IsPresent; noui=$NoUi.IsPresent }
+$ctx=@{ state=$state; root=$InstallRoot; app=$AppDir; profile=$ProfileDir; browser=$BrowserDir; logs=$LogDir; ui=$UiDir; claude=$ClaudeDir; base=$Base; log=$Log; demo=$Demo.IsPresent; noui=$NoUi.IsPresent }
 $iss=[System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault2()
 $rs=[runspacefactory]::CreateRunspace($iss); $rs.ApartmentState='MTA'; $rs.Open(); $rs.SessionStateProxy.SetVariable('ctx',$ctx)
 $psEngine=[powershell]::Create(); $psEngine.Runspace=$rs; [void]$psEngine.AddScript($engine).AddArgument($ctx)
