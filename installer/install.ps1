@@ -18,6 +18,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+# Shown bottom-right of the installer window AND (kept in sync) on the first-run box, so the
+# running version is visible at a glance. Bump on every shipped build.
+$ErbanVersion = '2026-06-29.5 terminal-signin'
 
 # Run elevated (create the folder, register auto-start, pre-authorise the firewall) -
 # one UAC, no mid-install failures. The .exe already requests admin; this covers the one-liner.
@@ -122,11 +125,13 @@ $UI_HTML = @'
   .item.failed .mark::after{content:"\2715"}
   .item .lab{display:flex;flex-direction:column;align-items:flex-start;text-align:left}
   .item .sub{font-size:11px;color:var(--muted);margin-top:1px}
+  .version{position:fixed;right:10px;bottom:8px;z-index:3;font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.04em}
 </style>
 </head>
 <body>
   <div class="aurora"><i></i><i></i></div>
   <canvas id="stars"></canvas>
+  <div class="version">build @@ERBANVER@@</div>
   <div class="wrap">
     <div class="brand">OpenClaw <b>for Business</b></div>
     <div class="stage">
@@ -221,6 +226,7 @@ $UI_HTML = @'
 </body>
 </html>
 '@
+$UI_HTML = $UI_HTML.Replace('@@ERBANVER@@', $ErbanVersion)
 Set-Content -Path (Join-Path $UiDir 'installer.html') -Value $UI_HTML -Encoding utf8
 $uiHtml = Join-Path $UiDir 'installer.html'
 

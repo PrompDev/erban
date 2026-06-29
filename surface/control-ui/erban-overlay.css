@@ -148,15 +148,19 @@
 /* the Start button is hidden until a provider is signed in */
 #erban-firstrun .erban-fr-btn[hidden] { display: none; }
 
-/* (1c) Paste-the-code step: shown when setup-token is waiting for the OAuth code. */
+/* (1c) Sign-in console step: shown while the OAuth console window is open. */
 #erban-firstrun .erban-fr-code { margin-top: 12px; text-align: center; }
 #erban-firstrun .erban-fr-code[hidden] { display: none; }
-#erban-firstrun .erban-fr-code .erban-fr-link {
-  display: inline-block;
-  margin-top: 10px;
-  font-size: 12px;
-  color: #9a9aa5;
-  text-decoration: underline;
+#erban-firstrun .erban-fr-reopen {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid #2b2e3a;
+  background: #15171f;
+  color: #ecedf1;
   cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
 }
-#erban-firstrun .erban-fr-code .erban-fr-link:hover { color: #d8453a; }
+#erban-firstrun .erban-fr-reopen:hover { background: #1b1e27; border-color: #3a3e4c; }

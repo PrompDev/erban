@@ -80,14 +80,11 @@ async function runFlow (p) {
   throw new Error('provider not implemented: ' + p.id)
 }
 
-// The live `claude setup-token` child while we're waiting for the user's pasted code.
-let signinChild = null
-const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
-
-// `claude setup-token` is an interactive browser+paste flow: it prints an OAuth URL,
-// the user authorises in a browser, claude.com shows them a code, and they paste it
-// back on stdin. We drive that headlessly: open the URL for them, surface the
-// 'awaiting-code' state to the box UI, and write their pasted code to the child stdin.
+// `claude setup-token` is a TTY app (Ink): with piped stdio it emits NOTHING - no URL,
+// no prompt - so parsing its output is impossible and the sign-in just hangs. The only
+// reliable way is to run it in a REAL console window, where it shows the URL, opens the
+// browser, and takes the pasted code itself. We launch that window and poll `auth status`
+// until the token lands, surfacing 'awaiting-terminal' so the box can guide the user.
 async function runClaudeFlow (p) {
   state = { provider: p.id, status: 'signing-in', step: 'auth', error: null, url: null }
   if (await claudeIsAuthed()) {
@@ -95,57 +92,39 @@ async function runClaudeFlow (p) {
     state = { provider: p.id, status: 'ready', step: 'done', error: null, url: null }
     return
   }
-  await new Promise((resolve, reject) => {
-    let out = '', urlSent = false, settled = false
-    const child = spawn(CLAUDE_BIN, ['setup-token'], { shell: true, windowsHide: true })
-    signinChild = child
-    const settle = (fn, arg) => { if (settled) return; settled = true; clearTimeout(timer); signinChild = null; fn(arg) }
-    const scan = (buf) => {
-      out += buf.toString()
-      if (urlSent) return
-      const clean = stripAnsi(out)
-      const m = clean.match(/https?:\/\/\S*oauth\/authorize\S*/i)
-      // Act only once the WHOLE url has arrived (a newline or the paste prompt follows it),
-      // so a chunk boundary mid-url can't hand the UI a truncated link.
-      if (m && (/paste code/i.test(clean) || /[\r\n]/.test(clean.slice(m.index + m[0].length)))) {
-        urlSent = true
-        const url = m[0]
-        state = { provider: p.id, status: 'awaiting-code', step: 'authorize', error: null, url }
-        openBrowser(url)
-      }
-    }
-    child.stdout && child.stdout.on('data', scan)
-    child.stderr && child.stderr.on('data', scan)
-    // Generous window: a human has to open the browser, sign in, and paste a code back.
-    const timer = setTimeout(() => { try { child.kill() } catch (e) {} settle(reject, new Error('Claude sign-in timed out waiting for the code.')) }, 900000)
-    child.on('error', (e) => settle(reject, e))
-    child.on('close', async () => {
-      if (await claudeIsAuthed()) settle(resolve)
-      else settle(reject, new Error('Claude sign-in did not complete: ' + (stripAnsi(out).trim().slice(-300) || 'no output')))
-    })
-  })
+  openSigninTerminal()
+  state = { provider: p.id, status: 'awaiting-terminal', step: 'authorize', error: null, url: null }
+  const ok = await pollAuthed(900000)
+  if (!ok) throw new Error('Sign-in did not finish. Complete it in the sign-in window, then click Sign in with Claude again.')
   persistProvider(p.id)
   state = { provider: p.id, status: 'ready', step: 'done', error: null, url: null }
 }
 
-// Feed the user's pasted authorization code to the waiting setup-token child.
-export function submitCode (codeRaw) {
-  const code = String(codeRaw || '').trim()
-  if (!signinChild || !signinChild.stdin || signinChild.stdin.destroyed) return { ok: false, error: 'no sign-in is waiting for a code' }
-  if (!code) return { ok: false, error: 'code required' }
+// Open a visible console running setup-token. The new console gives claude a real TTY
+// (piped stdio yields no output / no prompt). The shipped wrapper adds friendly copy and
+// uses the claude.cmd shim (avoids the PowerShell execution-policy block on claude.ps1).
+function openSigninTerminal () {
+  const wrapper = join(dirname(fileURLToPath(import.meta.url)), 'signin-claude.cmd')
   try {
-    signinChild.stdin.write(code + '\n')
-    state = { ...state, status: 'signing-in', step: 'finishing', url: null }
-    return { ok: true }
-  } catch (e) { return { ok: false, error: String(e && e.message || e) } }
+    if (existsSync(wrapper)) spawn(`start "Sign in to Claude" "${wrapper}"`, { shell: true, windowsHide: false })
+    else spawn('start "Sign in to Claude" cmd /k claude setup-token', { shell: true, windowsHide: false })
+  } catch (e) {}
 }
 
-// Open the OAuth url in the user's default browser (best-effort; the box also shows it).
-function openBrowser (url) {
-  try {
-    const u = String(url).replace(/'/g, "''")
-    spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', `Start-Process '${u}'`], { windowsHide: true, stdio: 'ignore' })
-  } catch (e) {}
+// Re-open the sign-in console (the user may have closed it). Only while a flow is live.
+export function reopenSignin () {
+  if (state.status === 'awaiting-terminal' || state.status === 'signing-in') { openSigninTerminal(); return { ok: true } }
+  return { ok: false, error: 'no sign-in in progress' }
+}
+
+// Poll `claude auth status` until the user finishes in the console window (or we time out).
+async function pollAuthed (timeoutMs) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 3000))
+    if (await claudeIsAuthed()) return true
+  }
+  return false
 }
 
 // `claude auth status` exits 0 when the binary is signed in (independent of where creds live).

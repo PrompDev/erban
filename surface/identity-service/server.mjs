@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { startSignin, getState as getSigninState, getActiveProvider, listProviders, submitCode } from './provider-auth.mjs'
+import { startSignin, getState as getSigninState, getActiveProvider, listProviders, reopenSignin } from './provider-auth.mjs'
 import { openStore } from './db.mjs'
 
 const PORT = Number(process.env.ERBAN_IDENTITY_PORT || 8766)
@@ -97,8 +97,8 @@ function handle (payload, reply) {
       const s = getSigninState()
       return reply(JSON.stringify({ id, ok: true, provider: s.provider, status: s.status, step: s.step, error: s.error, url: s.url || null }))
     }
-    if (m.action === 'signin-code') {
-      const r = submitCode(String(m.code || ''))
+    if (m.action === 'signin-reopen') {
+      const r = reopenSignin()
       return reply(JSON.stringify({ id, ok: !!r.ok, error: r.error || null }))
     }
     reply(JSON.stringify({ id, ok: false, error: 'unknown action' }))
