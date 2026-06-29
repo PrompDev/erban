@@ -80,11 +80,12 @@ async function runFlow (p) {
   throw new Error('provider not implemented: ' + p.id)
 }
 
-// `claude setup-token` is a TTY app (Ink): with piped stdio it emits NOTHING - no URL,
-// no prompt - so parsing its output is impossible and the sign-in just hangs. The only
-// reliable way is to run it in a REAL console window, where it shows the URL, opens the
-// browser, and takes the pasted code itself. We launch that window and poll `auth status`
-// until the token lands, surfacing 'awaiting-terminal' so the box can guide the user.
+// One-click sign-in. `claude auth login --claudeai` uses the OAuth LOOPBACK flow: it
+// auto-opens the browser and, on Approve, the redirect returns to a localhost listener
+// that completes auth on its own (no code to copy - unlike `setup-token`). It needs a
+// real console for a TTY (piped stdio emits nothing), so we launch a minimized console
+// and poll `auth status` until the credential lands in the shared store, surfacing
+// 'awaiting-terminal' so the box can say "approve in your browser".
 async function runClaudeFlow (p) {
   state = { provider: p.id, status: 'signing-in', step: 'auth', error: null, url: null }
   if (await claudeIsAuthed()) {
@@ -100,14 +101,15 @@ async function runClaudeFlow (p) {
   state = { provider: p.id, status: 'ready', step: 'done', error: null, url: null }
 }
 
-// Open a visible console running setup-token. The new console gives claude a real TTY
-// (piped stdio yields no output / no prompt). The shipped wrapper adds friendly copy and
-// uses the claude.cmd shim (avoids the PowerShell execution-policy block on claude.ps1).
+// Launch the sign-in console (minimized - the user only interacts with the browser).
+// The console gives claude a real TTY so it can open the browser + run the loopback
+// listener (piped stdio yields nothing). The shipped wrapper runs `auth login` and uses
+// the claude.cmd shim (avoids the PowerShell execution-policy block on claude.ps1).
 function openSigninTerminal () {
   const wrapper = join(dirname(fileURLToPath(import.meta.url)), 'signin-claude.cmd')
   try {
-    if (existsSync(wrapper)) spawn(`start "Sign in to Claude" "${wrapper}"`, { shell: true, windowsHide: false })
-    else spawn('start "Sign in to Claude" cmd /k claude setup-token', { shell: true, windowsHide: false })
+    if (existsSync(wrapper)) spawn(`start "Sign in to Claude" /min "${wrapper}"`, { shell: true, windowsHide: false })
+    else spawn('start "Sign in to Claude" /min cmd /c claude auth login --claudeai', { shell: true, windowsHide: false })
   } catch (e) {}
 }
 

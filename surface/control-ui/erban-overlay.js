@@ -12,7 +12,7 @@
   var currentName = null;
   // Bump on every shipped bundle. Shown on the first-run screen so we can confirm at a
   // glance which version a machine is actually running (rules out stale-cache confusion).
-  var BUILD = "2026-06-29.5 terminal-signin";
+  var BUILD = "2026-06-29.6 oauth-loopback";
   try { console.log("[erban] overlay build " + BUILD); } catch (e) {}
 
   // Capture the launch epoch (?erbanT0=) at script-load time, BEFORE the SPA router can
@@ -192,7 +192,7 @@
       setLocal(name); helperSet(name); // persist the name (best-effort) before sign-in
       lockButtons(true);
       btn.classList.add("is-working");
-      setStatus("Opening the sign-in window for " + (PROVIDER_LABELS[provider] || provider) + "…");
+      setStatus("Opening your browser to sign in with " + (PROVIDER_LABELS[provider] || provider) + "…");
       signinStart(provider).then(function (r) {
         if (!r || !r.ok) return failSignin(btn, (r && r.error) || "Could not start sign-in.");
         if (r.status === "unsupported" || r.status === "error") return failSignin(btn, r.error || "Not available yet.");
@@ -222,13 +222,14 @@
           } else if (s.status === "error" || s.status === "unsupported") {
             clearInterval(iv); hideReopen(); failSignin(btn, s.error || "Sign-in failed.");
           } else if (s.status === "awaiting-terminal") {
-            // A console window opened for the OAuth flow; the user signs in + pastes there.
+            // Loopback OAuth: the browser opened — the user just clicks Approve and it
+            // finishes on its own. We keep polling until the credential lands.
             tries = 0; // pause the timeout clock while we wait on the human
             showReopen();
-            setStatus("A sign-in window opened — follow the steps in it. This updates when you're done.");
+            setStatus("Click Approve in your browser to finish — this completes on its own.");
             if (!reopenWired) {
               reopenWired = true;
-              reopenBtn.addEventListener("click", function () { signinReopen(); setStatus("Reopened the sign-in window — check your taskbar."); });
+              reopenBtn.addEventListener("click", function () { signinReopen(); setStatus("Reopened the sign-in — check your browser."); });
             }
           } else if (s.step) {
             setStatus("Signing in… (" + s.step + ")");
