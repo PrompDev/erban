@@ -20,7 +20,7 @@ $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 # Shown bottom-right of the installer window AND (kept in sync) on the first-run box, so the
 # running version is visible at a glance. Bump on every shipped build.
-$ErbanVersion = '2026-06-30.11 lifecycle'
+$ErbanVersion = '2026-06-30.12 lifecycle'
 
 # Run elevated (create the folder, register auto-start, pre-authorise the firewall) -
 # one UAC, no mid-install failures. The .exe already requests admin; this covers the one-liner.
@@ -270,8 +270,10 @@ $engine = {
     # Launch a detached background process WITHOUT ShellExecute. Start-Process -WindowStyle Hidden
     # (ShellExecute) fails with 0xfffffffe in this MTA engine runspace; .NET CreateProcess
     # (UseShellExecute=false, CreateNoWindow) works and the child survives the installer exiting.
-    function StartBg($file,$args){
-      try{ $psi=New-Object System.Diagnostics.ProcessStartInfo; $psi.FileName=$file; $psi.Arguments=$args; $psi.UseShellExecute=$false; $psi.CreateNoWindow=$true; [System.Diagnostics.Process]::Start($psi)|Out-Null }
+    function StartBg($file,$argline){
+      # NB: the parameter must NOT be named $args - that collides with PowerShell's automatic
+      # $args, leaving $psi.Arguments empty (wscript then shows its Settings dialog; cmd no-ops).
+      try{ $psi=New-Object System.Diagnostics.ProcessStartInfo; $psi.FileName=$file; $psi.Arguments=$argline; $psi.UseShellExecute=$false; $psi.CreateNoWindow=$true; [System.Diagnostics.Process]::Start($psi)|Out-Null }
       catch{ Log "StartBg '$file' failed: $($_.Exception.Message)" }
     }
     $node=(Get-Command node -ErrorAction SilentlyContinue).Source

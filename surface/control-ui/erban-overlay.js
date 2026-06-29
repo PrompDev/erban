@@ -12,7 +12,7 @@
   var currentName = null;
   // Bump on every shipped bundle. Shown on the first-run screen so we can confirm at a
   // glance which version a machine is actually running (rules out stale-cache confusion).
-  var BUILD = "2026-06-30.11 lifecycle";
+  var BUILD = "2026-06-30.12 lifecycle";
   try { console.log("[erban] overlay build " + BUILD); } catch (e) {}
 
   // Capture the launch epoch (?erbanT0=) at script-load time, BEFORE the SPA router can
