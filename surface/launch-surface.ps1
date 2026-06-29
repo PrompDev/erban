@@ -61,6 +61,18 @@ $env:ERBAN_WORKSPACE = $wsDir
 # one-click sign-in (provider-auth.mjs -> `claude setup-token`) writes the login where
 # the gateway reads it. Only in an installed layout; dev runs use the default ~/.claude.
 if ($Root) { $env:CLAUDE_CONFIG_DIR = Join-Path $Root "claude" }
+# Claude Code on Windows shells out to bash and refuses to run without it (or PowerShell 7), so the
+# one-click sign-in (provider-auth.mjs -> `claude setup-token`) needs a bash on CLAUDE_CODE_GIT_BASH_PATH.
+# The installer installs Git for Windows; resolve bash.exe here so the identity-service child we spawn
+# below inherits it. (The installer also pins this in the user env + gateway.cmd; this is the fallback.)
+if (-not $env:CLAUDE_CODE_GIT_BASH_PATH) {
+  $gitBash = @(
+    "$env:ProgramFiles\Git\bin\bash.exe",
+    "${env:ProgramFiles(x86)}\Git\bin\bash.exe",
+    "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe"
+  ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+  if ($gitBash) { $env:CLAUDE_CODE_GIT_BASH_PATH = $gitBash }
+}
 $idJson = Join-Path $wsDir "erban-identity.json"
 $idMd   = Join-Path $wsDir "IDENTITY.md"
 # Active model-provider marker, written by the first-run sign-in (provider-auth.mjs).

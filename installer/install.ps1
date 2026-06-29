@@ -320,6 +320,30 @@ $engine = {
       Log 'claude CLI installed'
     } else { Log 'claude CLI already present' }
 
+    # 1e - install Git for Windows: Claude Code on Windows shells out to bash (or PowerShell 7)
+    #      and refuses to run without one, so the one-click `claude setup-token` sign-in fails on
+    #      a clean PC. We install it silently, then pin CLAUDE_CODE_GIT_BASH_PATH (below + in the
+    #      gateway/handover env + launch-surface) so every process that runs `claude` finds bash.
+    $gitBash=@("$env:ProgramFiles\Git\bin\bash.exe","${env:ProgramFiles(x86)}\Git\bin\bash.exe","$env:LOCALAPPDATA\Programs\Git\bin\bash.exe")|Where-Object{Test-Path $_}|Select-Object -First 1
+    if(-not $gitBash){ $g=Get-Command git -ErrorAction SilentlyContinue; if($g){ $cand=Join-Path (Split-Path (Split-Path $g.Source)) 'bin\bash.exe'; if(Test-Path $cand){ $gitBash=$cand } } }
+    if(-not $gitBash){
+      Step 1 'Installing Git (the Claude engine needs it)...' 66
+      try{
+        $gurl=$null
+        try{ $rel=Invoke-RestMethod 'https://api.github.com/repos/git-for-windows/git/releases/latest' -Headers @{ 'User-Agent'='erban-installer' } -TimeoutSec 25; $a=$rel.assets|Where-Object{$_.name -like 'Git-*-64-bit.exe'}|Select-Object -First 1; if($a){ $gurl=$a.browser_download_url } }catch{ Log "git release lookup fallback: $($_.Exception.Message)" }
+        if(-not $gurl){ $gurl='https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe' }
+        $gexe=Join-Path $ctx.logs 'git-setup.exe'
+        Invoke-WebRequest $gurl -OutFile $gexe -UseBasicParsing -TimeoutSec 600
+        $ec=RunTimed $gexe @('/VERYSILENT','/NORESTART','/SP-','/SUPPRESSMSGBOXES','/NOCANCEL') 420 (Join-Path $ctx.logs 'git.out') (Join-Path $ctx.logs 'git.err')
+        if($ec -ne 0 -and $ec -ne 3010){ Log "git install exit=$ec (continuing; sign-in needs bash, see logs\git.err)" }
+        Remove-Item $gexe -Force -ErrorAction SilentlyContinue
+        $gitBash=@("$env:ProgramFiles\Git\bin\bash.exe","${env:ProgramFiles(x86)}\Git\bin\bash.exe","$env:LOCALAPPDATA\Programs\Git\bin\bash.exe")|Where-Object{Test-Path $_}|Select-Object -First 1
+        Log "git install attempted (bash=$gitBash)"
+      }catch{ Log "git install skipped: $($_.Exception.Message)" }
+    } else { Log "git bash present: $gitBash" }
+    # Persist for the user (belt-and-braces: covers a manually-launched claude); the launchers below pin it inline too.
+    if($gitBash){ try{ [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH',$gitBash,'User'); $env:CLAUDE_CODE_GIT_BASH_PATH=$gitBash }catch{} }
+
     # 2 - set everything up
     Step 2 'Setting up your assistant...' 60
     $zip=Join-Path $ctx.logs 'erban-assets.zip'
@@ -340,7 +364,10 @@ $engine = {
     $cfg|ConvertTo-Json -Depth 12|Set-Content (Join-Path $ctx.profile 'openclaw.json') -Encoding utf8
     $gwCmd=Join-Path $ctx.profile 'gateway.cmd'
     $gwExec= if($ocIndex){ "`"$node`" `"$ocIndex`" gateway --port $gw" } else { "`"$($oc.Source)`" gateway --port $gw" }
-    @('@echo off',"set `"HOME=$env:USERPROFILE`"","set `"CLAUDE_CONFIG_DIR=$($ctx.claude)`"","set `"OPENCLAW_STATE_DIR=$($ctx.profile)`"","set `"OPENCLAW_CONFIG_PATH=$($ctx.profile)\openclaw.json`"",'set "OPENCLAW_PROFILE=erban"',"set `"OPENCLAW_GATEWAY_PORT=$gw`"","set `"ERBAN_WORKSPACE=$workspace`"",$gwExec) -join "`r`n" | Set-Content -Path $gwCmd -Encoding ascii
+    $gwLines=@('@echo off',"set `"HOME=$env:USERPROFILE`"","set `"CLAUDE_CONFIG_DIR=$($ctx.claude)`"","set `"OPENCLAW_STATE_DIR=$($ctx.profile)`"","set `"OPENCLAW_CONFIG_PATH=$($ctx.profile)\openclaw.json`"",'set "OPENCLAW_PROFILE=erban"',"set `"OPENCLAW_GATEWAY_PORT=$gw`"","set `"ERBAN_WORKSPACE=$workspace`"")
+    if($gitBash){ $gwLines+="set `"CLAUDE_CODE_GIT_BASH_PATH=$gitBash`"" }   # the agent shells out to claude, which needs bash
+    $gwLines+=$gwExec
+    $gwLines -join "`r`n" | Set-Content -Path $gwCmd -Encoding ascii
     # Self-contained Claude config: register the handover SessionStart hook in the
     # erban-local Claude home, so a freshly-rotated agent picks up the last handover
     # doc. CLAUDE_CONFIG_DIR (set above + in launch-surface + the wrapper below) keeps
@@ -351,7 +378,10 @@ $engine = {
     # Context-handover supervisor wrapper (same Claude home + workspace as the gateway).
     $hoCmd=Join-Path $ctx.profile 'erban-handover.cmd'
     $hoExec="`"$node`" `"$(Join-Path $ctx.app 'surface\handover-service\supervisor.mjs')`""
-    @('@echo off',"set `"HOME=$env:USERPROFILE`"","set `"CLAUDE_CONFIG_DIR=$($ctx.claude)`"","set `"OPENCLAW_STATE_DIR=$($ctx.profile)`"","set `"OPENCLAW_CONFIG_PATH=$($ctx.profile)\openclaw.json`"","set `"ERBAN_WORKSPACE=$workspace`"",$hoExec) -join "`r`n" | Set-Content -Path $hoCmd -Encoding ascii
+    $hoLines=@('@echo off',"set `"HOME=$env:USERPROFILE`"","set `"CLAUDE_CONFIG_DIR=$($ctx.claude)`"","set `"OPENCLAW_STATE_DIR=$($ctx.profile)`"","set `"OPENCLAW_CONFIG_PATH=$($ctx.profile)\openclaw.json`"","set `"ERBAN_WORKSPACE=$workspace`"")
+    if($gitBash){ $hoLines+="set `"CLAUDE_CODE_GIT_BASH_PATH=$gitBash`"" }
+    $hoLines+=$hoExec
+    $hoLines -join "`r`n" | Set-Content -Path $hoCmd -Encoding ascii
     $wd=Join-Path $ctx.app 'erban-watchdog.ps1'
     @('$ErrorActionPreference="SilentlyContinue"',"if(-not(Get-NetTCPConnection -LocalPort $gw -State Listen)){ Start-Process -FilePath `"$gwCmd`" -WindowStyle Hidden }","`$b=Get-CimInstance Win32_Process -Filter `"Name='chrome.exe' OR Name='msedge.exe'`" | Where-Object { `$_.CommandLine -like '*$($ctx.browser)*' }","if(-not `$b){ Start-ScheduledTask -TaskName 'OpenClaw Business Surface' }") -join "`r`n" | Set-Content -Path $wd -Encoding utf8
     try{ if(Get-NetFirewallRule -DisplayName 'OpenClaw Business (node)' -ErrorAction SilentlyContinue){ Log 'firewall rule already present' } else { New-NetFirewallRule -DisplayName 'OpenClaw Business (node)' -Direction Inbound -Program $node -Action Allow -Profile Any -ErrorAction Stop|Out-Null; Log 'firewall rule added' } }catch{ Log "firewall skipped: $($_.Exception.Message)" }
