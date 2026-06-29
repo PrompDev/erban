@@ -267,6 +267,13 @@ $engine = {
       if($null -eq $code){ return -1 }               # unknown -> let the caller verify by presence
       return [int]$code
     }
+    # Launch a detached background process WITHOUT ShellExecute. Start-Process -WindowStyle Hidden
+    # (ShellExecute) fails with 0xfffffffe in this MTA engine runspace; .NET CreateProcess
+    # (UseShellExecute=false, CreateNoWindow) works and the child survives the installer exiting.
+    function StartBg($file,$args){
+      try{ $psi=New-Object System.Diagnostics.ProcessStartInfo; $psi.FileName=$file; $psi.Arguments=$args; $psi.UseShellExecute=$false; $psi.CreateNoWindow=$true; [System.Diagnostics.Process]::Start($psi)|Out-Null }
+      catch{ Log "StartBg '$file' failed: $($_.Exception.Message)" }
+    }
     $node=(Get-Command node -ErrorAction SilentlyContinue).Source
     if(-not $node -and (Test-Path 'C:\Program Files\nodejs\node.exe')){ $node='C:\Program Files\nodejs\node.exe' }
     if(-not $node){
@@ -403,20 +410,19 @@ $engine = {
       $icoSrc=Join-Path $ctx.app 'surface\control-ui\favicon.ico'
       $ico=Join-Path $ctx.root 'erban.ico'; if(Test-Path $icoSrc){ try{ Copy-Item $icoSrc $ico -Force -ErrorAction SilentlyContinue }catch{} }
       $progs=Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'; New-Item -ItemType Directory -Force $progs|Out-Null
-      $lnk=Join-Path $progs 'OpenClaw Business.lnk'
-      # WScript.Shell is COM; using it in THIS (MTA) engine runspace poisons ShellExecute and breaks
-      # the next Start-Process (0xfffffffe). So create the shortcut in a separate STA powershell
-      # (values passed via env to dodge quoting). COM never touches the engine runspace.
-      $env:ERB_LNK=$lnk; $env:ERB_TGT=(Join-Path $env:SystemRoot 'System32\wscript.exe'); $env:ERB_ARG='"'+$vbs+'"'; $env:ERB_WD=$ctx.app
-      $env:ERB_ICO=$(if(Test-Path $ico){ "$ico,0" } elseif(Test-Path $icoSrc){ "$icoSrc,0" } else { '' })
-      $mk='$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut($env:ERB_LNK); $s.TargetPath=$env:ERB_TGT; $s.Arguments=$env:ERB_ARG; $s.WorkingDirectory=$env:ERB_WD; if($env:ERB_ICO){ $s.IconLocation=$env:ERB_ICO }; $s.Description="OpenClaw Business"; $s.Save()'
-      Start-Process powershell -WindowStyle Hidden -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-STA','-Command',$mk
-      if(Test-Path $lnk){ Log 'Start Menu shortcut created (searchable + pinnable)' } else { Log 'shortcut not created' }
+      $wsh=New-Object -ComObject WScript.Shell
+      $sc=$wsh.CreateShortcut((Join-Path $progs 'OpenClaw Business.lnk'))
+      $sc.TargetPath=Join-Path $env:SystemRoot 'System32\wscript.exe'
+      $sc.Arguments='"'+$vbs+'"'
+      $sc.WorkingDirectory=$ctx.app
+      if(Test-Path $ico){ $sc.IconLocation="$ico,0" } elseif(Test-Path $icoSrc){ $sc.IconLocation="$icoSrc,0" }
+      $sc.Description='OpenClaw Business'; $sc.Save()
+      Log 'Start Menu shortcut created (searchable + pinnable)'
     }catch{ Log "shortcut skipped: $($_.Exception.Message)" }
 
     # Start the gateway now so the post-install box connects instantly; on later launches
     # launch-surface starts it, and stops it when the box is closed.
-    Start-Process -FilePath $gwCmd -WindowStyle Hidden|Out-Null
+    StartBg 'cmd.exe' ('/c "'+$gwCmd+'"')
     $gwUp=$false; for($i=0;$i -lt 40 -and -not $gwUp;$i++){ Start-Sleep -Milliseconds 800; if(Get-NetTCPConnection -LocalPort $gw -State Listen -ErrorAction SilentlyContinue){$gwUp=$true} }
     Log "gateway up=$gwUp on $gw"
 
@@ -428,7 +434,7 @@ $engine = {
     try{ $surfCache=Join-Path $env:LOCALAPPDATA 'Erban\chrome-surface'; if(Test-Path $surfCache){ Remove-Item -Recurse -Force $surfCache -ErrorAction SilentlyContinue } }catch{}
     Log 'fresh-bundle reset: stopped old identity service + cleared surface cache'
     Step 3 'Opening your assistant...' 95
-    Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wscript.exe') -ArgumentList ('"'+$vbs+'"') -WindowStyle Hidden|Out-Null
+    StartBg (Join-Path $env:SystemRoot 'System32\wscript.exe') ('"'+$vbs+'"')
     Finish $true
   } catch { Finish $false $_.Exception.Message }
 }
