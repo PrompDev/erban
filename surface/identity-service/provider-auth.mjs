@@ -19,6 +19,24 @@ import { homedir } from 'node:os'
 import { openStore } from './db.mjs'
 
 const HOME = process.env.USERPROFILE || homedir()
+const SYSROOT = process.env.SystemRoot || 'C:\\Windows'
+
+// The surface scheduled task can hand us a STRIPPED PATH (missing System32 and the npm
+// global bin). That breaks both `claude` resolution AND node-pty/ConPTY's spawn of cmd.exe
+// (which fails with a bare "File not found:"). Repair PATH at load so everything resolves.
+;(function ensurePath () {
+  try {
+    const want = [SYSROOT + '\\System32', SYSROOT, (process.env.APPDATA ? process.env.APPDATA + '\\npm' : '')].filter(Boolean)
+    const have = (process.env.PATH || '').split(';')
+    const add = want.filter((d) => !have.some((c) => c.trim().toLowerCase() === d.toLowerCase()))
+    if (add.length) process.env.PATH = add.concat(have).join(';')
+  } catch (e) {}
+})()
+
+// Absolute shell + claude paths (don't rely on PATH inside the PTY).
+const CMD_EXE = process.env.ComSpec || (SYSROOT + '\\System32\\cmd.exe')
+const CLAUDE_CMD = (process.env.APPDATA && existsSync(process.env.APPDATA + '\\npm\\claude.cmd')) ? process.env.APPDATA + '\\npm\\claude.cmd' : 'claude'
+
 // Same workspace resolution as server.mjs: ERBAN_WORKSPACE, else the bundle's own layout.
 const WORKSPACE = process.env.ERBAN_WORKSPACE || join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'agent', 'workspace')
 const PROVIDER_JSON = join(WORKSPACE, 'erban-provider.json')
@@ -100,7 +118,7 @@ async function runClaudeFlow (p) {
   await new Promise((resolve, reject) => {
     let out = '', urlSent = false, settled = false, poll = null, timer = null, term
     try {
-      term = ptyMod.spawn('cmd.exe', ['/c', 'claude', 'auth', 'login', '--claudeai'],
+      term = ptyMod.spawn(CMD_EXE, ['/c', CLAUDE_CMD, 'auth', 'login', '--claudeai'],
         { name: 'xterm-color', cols: 120, rows: 40, cwd: HOME, env: process.env })
     } catch (e) { return reject(new Error('could not start sign-in: ' + (e && e.message || e))) }
     signinTerm = term
