@@ -20,7 +20,7 @@ $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 # Shown bottom-right of the installer window AND (kept in sync) on the first-run box, so the
 # running version is visible at a glance. Bump on every shipped build.
-$ErbanVersion = '2026-06-30.13 agent+icon'
+$ErbanVersion = '2026-06-30.14 agent+icon'
 
 # Run elevated (create the folder, register auto-start, pre-authorise the firewall) -
 # one UAC, no mid-install failures. The .exe already requests admin; this covers the one-liner.
@@ -383,7 +383,11 @@ $engine = {
     # %LOCALAPPDATA%\Erban\erban.ico). Without it the box shows the generic Chrome icon.
     $boxIco=Join-Path $env:LOCALAPPDATA 'Erban\erban.ico'
     try{
-      & (Join-Path $ctx.app 'surface\make-icon.ps1') | Out-Null
+      New-Item -ItemType Directory -Force (Split-Path $boxIco) | Out-Null
+      $miSrc=Join-Path $ctx.app 'surface\control-ui\apple-touch-icon.png'
+      # Run make-icon's logic via a scriptblock (NOT `& file.ps1`, which the execution policy blocks)
+      # with explicit paths, so the box stamps the crisp multi-res OpenClaw logo.
+      & ([scriptblock]::Create((Get-Content -Raw (Join-Path $ctx.app 'surface\make-icon.ps1')))) -Source $miSrc -OutIco $boxIco | Out-Null
       if(Test-Path $boxIco){ Log "box icon built: $boxIco" } else { throw 'make-icon produced no file' }
     }catch{
       Log "make-icon failed ($($_.Exception.Message)); copying favicon.ico"
