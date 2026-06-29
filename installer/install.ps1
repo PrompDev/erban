@@ -403,14 +403,15 @@ $engine = {
       $icoSrc=Join-Path $ctx.app 'surface\control-ui\favicon.ico'
       $ico=Join-Path $ctx.root 'erban.ico'; if(Test-Path $icoSrc){ try{ Copy-Item $icoSrc $ico -Force -ErrorAction SilentlyContinue }catch{} }
       $progs=Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'; New-Item -ItemType Directory -Force $progs|Out-Null
-      $wsh=New-Object -ComObject WScript.Shell
-      $sc=$wsh.CreateShortcut((Join-Path $progs 'OpenClaw Business.lnk'))
-      $sc.TargetPath=Join-Path $env:SystemRoot 'System32\wscript.exe'
-      $sc.Arguments='"'+$vbs+'"'
-      $sc.WorkingDirectory=$ctx.app
-      if(Test-Path $ico){ $sc.IconLocation="$ico,0" } elseif(Test-Path $icoSrc){ $sc.IconLocation="$icoSrc,0" }
-      $sc.Description='OpenClaw Business'; $sc.Save()
-      Log 'Start Menu shortcut created (searchable + pinnable)'
+      $lnk=Join-Path $progs 'OpenClaw Business.lnk'
+      # WScript.Shell is COM; using it in THIS (MTA) engine runspace poisons ShellExecute and breaks
+      # the next Start-Process (0xfffffffe). So create the shortcut in a separate STA powershell
+      # (values passed via env to dodge quoting). COM never touches the engine runspace.
+      $env:ERB_LNK=$lnk; $env:ERB_TGT=(Join-Path $env:SystemRoot 'System32\wscript.exe'); $env:ERB_ARG='"'+$vbs+'"'; $env:ERB_WD=$ctx.app
+      $env:ERB_ICO=$(if(Test-Path $ico){ "$ico,0" } elseif(Test-Path $icoSrc){ "$icoSrc,0" } else { '' })
+      $mk='$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut($env:ERB_LNK); $s.TargetPath=$env:ERB_TGT; $s.Arguments=$env:ERB_ARG; $s.WorkingDirectory=$env:ERB_WD; if($env:ERB_ICO){ $s.IconLocation=$env:ERB_ICO }; $s.Description="OpenClaw Business"; $s.Save()'
+      Start-Process powershell -WindowStyle Hidden -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-STA','-Command',$mk
+      if(Test-Path $lnk){ Log 'Start Menu shortcut created (searchable + pinnable)' } else { Log 'shortcut not created' }
     }catch{ Log "shortcut skipped: $($_.Exception.Message)" }
 
     # Start the gateway now so the post-install box connects instantly; on later launches
