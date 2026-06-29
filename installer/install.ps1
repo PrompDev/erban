@@ -420,11 +420,11 @@ $engine = {
       Log 'Start Menu shortcut created (searchable + pinnable)'
     }catch{ Log "shortcut skipped: $($_.Exception.Message)" }
 
-    # Start the gateway now so the post-install box connects instantly; on later launches
-    # launch-surface starts it, and stops it when the box is closed.
-    StartBg 'cmd.exe' ('/c "'+$gwCmd+'"')
-    $gwUp=$false; for($i=0;$i -lt 40 -and -not $gwUp;$i++){ Start-Sleep -Milliseconds 800; if(Get-NetTCPConnection -LocalPort $gw -State Listen -ErrorAction SilentlyContinue){$gwUp=$true} }
-    Log "gateway up=$gwUp on $gw"
+    # The gateway is started by launch-surface (the post-install open below, and every later
+    # launch), which runs in a normal PowerShell where launching processes works reliably. The
+    # install engine's MTA runspace can't cleanly start a long-running detached process, so we
+    # don't start the gateway here - launch-surface brings it up and stops it on close.
+    Log 'gateway will be started by the surface launcher'
 
     # 3 - open the assistant
     # Fresh-bundle reset: a re-install just replaced the bundle on disk, but a stale identity service
