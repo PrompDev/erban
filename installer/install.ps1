@@ -20,7 +20,7 @@ $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 # Shown bottom-right of the installer window AND (kept in sync) on the first-run box, so the
 # running version is visible at a glance. Bump on every shipped build.
-$ErbanVersion = '2026-06-30.16 launch+shortcuts'
+$ErbanVersion = '2026-06-30.17 extract-fix'
 
 # Run elevated (create the folder, register auto-start, pre-authorise the firewall) -
 # one UAC, no mid-install failures. The .exe already requests admin; this covers the one-liner.
@@ -373,8 +373,19 @@ $engine = {
     Step 2 'Setting up your assistant...' 60
     $zip=Join-Path $ctx.logs 'erban-assets.zip'
     Invoke-WebRequest -Uri "$($ctx.base)/erban-assets.zip" -OutFile $zip -UseBasicParsing
-    if(Test-Path $ctx.app){ Remove-Item $ctx.app -Recurse -Force }; New-Item -ItemType Directory -Force $ctx.app|Out-Null
-    Expand-Archive -Path $zip -DestinationPath $ctx.app -Force; Remove-Item $zip -Force -ErrorAction SilentlyContinue
+    if(Test-Path $ctx.app){ Remove-Item $ctx.app -Recurse -Force }
+    # Extract WITHOUT Expand-Archive: its Microsoft.PowerShell.Archive module fails to load on some
+    # machines ("the module could not be loaded"). Use .NET directly - no module. ExtractToDirectory
+    # creates $ctx.app and handles our zip fine (verified). Fall back to Expand-Archive just in case.
+    try{
+      Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+      [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $ctx.app)
+    }catch{
+      Log "ZipFile extract failed ($($_.Exception.Message)); trying Expand-Archive"
+      if(Test-Path $ctx.app){ Remove-Item $ctx.app -Recurse -Force }; New-Item -ItemType Directory -Force $ctx.app|Out-Null
+      Expand-Archive -Path $zip -DestinationPath $ctx.app -Force
+    }
+    Remove-Item $zip -Force -ErrorAction SilentlyContinue
     Log 'bundle extracted'
     $controlUi=(Join-Path $ctx.app 'surface\control-ui') -replace '\\','/'
     $launcher=Join-Path $ctx.app 'surface\launch-surface.ps1'
